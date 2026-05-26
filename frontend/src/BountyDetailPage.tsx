@@ -1,4 +1,10 @@
 
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUpRight, Check, Clock, Copy, Printer } from "lucide-react";
+
+import UsdAmount from "./UsdAmount";
+import type { Bounty, BountyEvent, BountyStatus } from "./types";
+
 type BountyAction = "reserve" | "submit" | "release" | "refund";
 
 type Props = {
@@ -55,6 +61,44 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   );
 }
 
+function useBountyStatusAnnouncement(
+  bounty: Bounty | null,
+  statusCopy: Record<BountyStatus, { label: string; description: string }>,
+  clearAfterMs = 3000,
+) {
+  const previousStatusRef = useRef<{ id: string; status: BountyStatus } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+
+  useEffect(() => {
+    if (!bounty) {
+      previousStatusRef.current = null;
+      setAnnouncement("");
+      return;
+    }
+
+    const previous = previousStatusRef.current;
+    if (previous?.id === bounty.id && previous.status !== bounty.status) {
+      setAnnouncement(
+        `Bounty #${bounty.issueNumber} status changed to ${statusCopy[bounty.status].label}`,
+      );
+    }
+
+    previousStatusRef.current = { id: bounty.id, status: bounty.status };
+  }, [bounty, statusCopy]);
+
+  useEffect(() => {
+    if (!announcement) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setAnnouncement("");
+    }, clearAfterMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [announcement, clearAfterMs]);
+
+  return announcement;
+}
+
 const EVENT_LABELS: Record<string, string> = {
   created: "Bounty created",
   reserved: "Bounty reserved",
@@ -108,9 +152,17 @@ export default function BountyDetailPage({
   renderActionButton,
   formatTimestamp,
 }: Props) {
+  const statusAnnouncement = useBountyStatusAnnouncement(bounty, statusCopy);
+
+  function handlePrint() {
+    window.print();
+  }
 
   return (
     <div className="page-shell">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {statusAnnouncement}
+      </div>
       <div className="glow glow-left" />
       <div className="glow glow-right" />
 
@@ -120,14 +172,27 @@ export default function BountyDetailPage({
             <span className="panel-kicker">Bounty</span>
             <h2>{bounty ? bounty.title : "Bounty"}</h2>
           </div>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onBack}
-            disabled={loading}
-          >
-            Back
-          </button>
+          <div className="panel-header__actions">
+            <button
+              type="button"
+              className="secondary-button print-button"
+              onClick={handlePrint}
+              disabled={loading || !bounty}
+              aria-label="Print / Export PDF"
+              title="Print / Export PDF"
+            >
+              <Printer size={16} />
+              Print / Export PDF
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onBack}
+              disabled={loading}
+            >
+              Back
+            </button>
+          </div>
         </div>
 
         {loading && !bounty ? (
@@ -165,7 +230,10 @@ export default function BountyDetailPage({
             <div className="meta-grid meta-grid--detail">
               <div>
                 <span className="meta-label">Bounty ID</span>
-
+                <strong className="copy-row">
+                  {bounty.id}
+                  <CopyButton text={bounty.id} label="bounty ID" />
+                </strong>
               </div>
               <div>
                 <span className="meta-label">Issue</span>
@@ -190,7 +258,10 @@ export default function BountyDetailPage({
               </div>
               <div>
                 <span className="meta-label">Maintainer</span>
-
+                <strong className="copy-row">
+                  {bounty.maintainer}
+                  <CopyButton text={bounty.maintainer} label="maintainer wallet address" />
+                </strong>
               </div>
               <div>
                 <span className="meta-label">Contributor</span>

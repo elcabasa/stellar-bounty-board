@@ -308,6 +308,32 @@ textarea {
   margin-bottom: 20px;
 }
 
+.panel-header__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.print-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .panel-header h2 {
   margin: 6px 0 0;
   font-size: 1.6rem;
@@ -1239,6 +1265,70 @@ select {
   .ghost-button {
     width: 100%;
     justify-content: center;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0.6in;
+  }
+
+  body,
+  [data-theme="dark"] body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .page-shell {
+    max-width: none;
+    padding: 0;
+  }
+
+  .glow,
+  .panel-header__actions,
+  .action-row,
+  .copy-button-wrapper,
+  .submission-modal {
+    display: none !important;
+  }
+
+  .panel,
+  .bounty-detail {
+    border: 0;
+    box-shadow: none;
+    background: #fff;
+    border-radius: 0;
+    padding: 0;
+    max-width: none;
+  }
+
+  .bounty-detail__content {
+    gap: 18px;
+  }
+
+  .bounty-detail__hero,
+  .meta-grid--detail {
+    break-inside: avoid;
+  }
+
+  .bounty-detail__hero {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .repo-avatar {
+    display: none;
+  }
+
+  .meta-grid--detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .status-pill,
+  .amount-chip,
+  .chip {
+    border: 1px solid #999;
+    background: transparent !important;
+    color: #000 !important;
   }
 }
 

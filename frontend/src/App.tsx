@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Coins,
@@ -200,6 +200,13 @@ function App() {
   const [sortOption, setSortOption] = useState(initialFilters.sortOption);
   const [sortDirection, setSortDirection] = useState(initialFilters.sortDirection);
   const [pathname, setPathname] = useState(window.location.pathname);
+  const detailId = useMemo(() => {
+    const match = pathname.match(/^\/bounties\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1] ?? "") : null;
+  }, [pathname]);
+  const detailIdRef = useRef<string | null>(detailId);
+  const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [profileContributor, setProfileContributor] = useState("");
   const [profileStatus, setProfileStatus] = useState<"all" | BountyStatus>("all");
 
@@ -209,6 +216,9 @@ function App() {
   const [submissionModalError, setSubmissionModalError] = useState<string | null>(null);
   const [submissionModalData, setSubmissionModalData] = useState<Partial<SubmissionFormData> | undefined>(undefined);
 
+  useEffect(() => {
+    detailIdRef.current = detailId;
+  }, [detailId]);
 
 
   async function refresh(signal?: AbortSignal): Promise<void> {
@@ -218,6 +228,14 @@ function App() {
     ]);
     setBounties(bountyData);
     setIssues(issueData);
+
+    const currentDetailId = detailIdRef.current;
+    if (currentDetailId) {
+      const refreshedDetailBounty = bountyData.find((bounty) => bounty.id === currentDetailId);
+      if (refreshedDetailBounty) {
+        setDetailBounty(refreshedDetailBounty);
+      }
+    }
   }
 
   useEffect(() => {
@@ -346,8 +364,6 @@ function App() {
   }, [bounties, profileContributor]);
 
   const [profile, setProfile] = useState(() => createDefaultProfile());
-  const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const recommendations = useMemo(() => {
     return generateRecommendations(bounties, profile);
   }, [bounties, profile]);
@@ -436,11 +452,6 @@ function App() {
       </button>
     );
   }
-
-  const detailId = useMemo(() => {
-    const match = pathname.match(/^\/bounties\/([^/]+)$/);
-    return match ? decodeURIComponent(match[1] ?? "") : null;
-  }, [pathname]);
 
   const repoRoute = useMemo(() => {
     const match = pathname.match(/^\/repo\/([^/]+)\/([^/]+)$/);
