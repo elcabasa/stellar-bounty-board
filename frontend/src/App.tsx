@@ -1,4 +1,15 @@
-import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  ReactNode,
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowUpRight,
   Coins,
@@ -34,20 +45,49 @@ import {
   reserveBounty,
   submitBounty,
 } from "./api";
-import SubmissionChecklistModal, { type SubmissionFormData } from "./SubmissionChecklistModal";
-import { BountyRecommendation, ContributorProfile, createDefaultProfile, generateRecommendations, updateProfileFromBounties } from "./recommendations";
+import SubmissionChecklistModal, {
+  type SubmissionFormData,
+} from "./SubmissionChecklistModal";
+import {
+  BountyRecommendation,
+  ContributorProfile,
+  createDefaultProfile,
+  generateRecommendations,
+  updateProfileFromBounties,
+} from "./recommendations";
 import RecommendedBounties from "./RecommendedBounties";
-import { statusCopy, actionCopy, readInitialFilters, FilterState, statusOptions, statusGlossary, sortOptions } from "./constants";
-import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMetrics, getUniqueRepos, getRepoMetrics, sortBounties, debounce, SortOption, SortState, xlmToUsd } from "./utils";
+import {
+  statusCopy,
+  actionCopy,
+  readInitialFilters,
+  FilterState,
+  statusOptions,
+  statusGlossary,
+  sortOptions,
+} from "./constants";
+import {
+  filterBounties,
+  getRewardBounds,
+  getActiveRewardLabel,
+  getContributorMetrics,
+  getUniqueRepos,
+  getRepoMetrics,
+  sortBounties,
+  debounce,
+  SortOption,
+  SortState,
+  xlmToUsd,
+} from "./utils";
 import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
 
 import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
-import BountyDetailPage from "./BountyDetailPage";
+const BountyDetailPage = lazy(() => import("./BountyDetailPage"));
 import UsdAmount from "./UsdAmount";
 
 import SkeletonBountyCard from "./SkeletonBountyCard";
 
-const STELLAR_PUBLIC_KEY_HINT = "Expected Stellar public key (starts with G and is 56 characters).";
+const STELLAR_PUBLIC_KEY_HINT =
+  "Expected Stellar public key (starts with G and is 56 characters).";
 const STELLAR_PUBLIC_KEY_REGEX = /^G[A-Z2-7]{55}$/;
 
 const DARK_MODE_KEY = "stellar-bounty-board:theme";
@@ -88,8 +128,6 @@ const initialForm: CreateBountyPayload = {
   labels: [{ name: "help wanted", color: "0075ca" }],
 };
 
-
-
 function formatRelativeDeadline(deadlineAt: number): string {
   const now = Math.floor(Date.now() / 1000);
   const diff = deadlineAt - now;
@@ -107,10 +145,10 @@ function shortAddress(value: string): string {
 function validateStellarPublicKey(input: string): string | null {
   const value = input.trim();
   if (!value) return "Address is required.";
-  if (!/^G[A-Z0-9]{55}$/.test(value)) return "Enter a Stellar public key (starts with 'G', 56 characters)";
+  if (!/^G[A-Z0-9]{55}$/.test(value))
+    return "Enter a Stellar public key (starts with 'G', 56 characters)";
   return null;
 }
-
 
 const contributorStatuses: Array<BountyStatus | "all"> = [
   "all",
@@ -140,7 +178,11 @@ function formatTimestamp(value?: number): string {
   return new Date(value * 1000).toLocaleString();
 }
 
-const BountyAmount = memo(function BountyAmount({ bounty }: { bounty: Bounty }) {
+const BountyAmount = memo(function BountyAmount({
+  bounty,
+}: {
+  bounty: Bounty;
+}) {
   const [usdAmount, setUsdAmount] = useState<string | null>(null);
 
   useEffect(() => {
@@ -167,7 +209,9 @@ const BountyAmount = memo(function BountyAmount({ bounty }: { bounty: Bounty }) 
 
   return (
     <div className="amount-chip">
-      <strong>{bounty.amount} {bounty.tokenSymbol}</strong>
+      <strong>
+        {bounty.amount} {bounty.tokenSymbol}
+      </strong>
       {usdAmount && <span>{usdAmount}</span>}
     </div>
   );
@@ -178,14 +222,21 @@ type BountyCardProps = {
   onOpen: (id: string) => void;
   renderActionButton: (
     bounty: Bounty,
-    action: { action: "reserve" | "submit" | "release" | "refund"; label: string; title: string },
+    action: {
+      action: "reserve" | "submit" | "release" | "refund";
+      label: string;
+      title: string;
+    },
   ) => ReactNode;
 };
 
 // Custom comparator: skip re-renders when the underlying bounty data is
 // unchanged, even if parent recreated callback identities. `statusCopy` and
 // `actionCopy` come from a stable module-scope import.
-function bountyCardPropsEqual(prev: BountyCardProps, next: BountyCardProps): boolean {
+function bountyCardPropsEqual(
+  prev: BountyCardProps,
+  next: BountyCardProps,
+): boolean {
   const a = prev.bounty;
   const b = next.bounty;
   return (
@@ -205,7 +256,11 @@ function bountyCardPropsEqual(prev: BountyCardProps, next: BountyCardProps): boo
   );
 }
 
-const BountyCard = memo(function BountyCard({ bounty, onOpen, renderActionButton }: BountyCardProps) {
+const BountyCard = memo(function BountyCard({
+  bounty,
+  onOpen,
+  renderActionButton,
+}: BountyCardProps) {
   return (
     <article
       className="bounty-card"
@@ -258,7 +313,9 @@ const BountyCard = memo(function BountyCard({ bounty, onOpen, renderActionButton
         </div>
         <div>
           <span className="meta-label">Contributor</span>
-          <strong>{bounty.contributor ? shortAddress(bounty.contributor) : "Open"}</strong>
+          <strong>
+            {bounty.contributor ? shortAddress(bounty.contributor) : "Open"}
+          </strong>
         </div>
         {bounty.status === "released" && bounty.releasedTxHash && (
           <div>
@@ -276,22 +333,32 @@ const BountyCard = memo(function BountyCard({ bounty, onOpen, renderActionButton
 
       <div className="chip-row">
         {bounty.labels.map((label) => (
-          <span className="chip" key={label.name}>{label.name}</span>
+          <span className="chip" key={label.name}>
+            {label.name}
+          </span>
         ))}
       </div>
 
       <p className="status-helper">
-        <strong>{statusCopy[bounty.status].label}:</strong> {statusCopy[bounty.status].description}
+        <strong>{statusCopy[bounty.status].label}:</strong>{" "}
+        {statusCopy[bounty.status].description}
       </p>
 
       {bounty.submissionUrl && (
-        <a className="submission-link" href={bounty.submissionUrl} target="_blank" rel="noreferrer">
+        <a
+          className="submission-link"
+          href={bounty.submissionUrl}
+          target="_blank"
+          rel="noreferrer"
+        >
           Review submission <ArrowUpRight size={16} />
         </a>
       )}
 
       <div className="action-row">
-        {(actionCopy[bounty.status] ?? []).map((action) => renderActionButton(bounty, action))}
+        {(actionCopy[bounty.status] ?? []).map((action) =>
+          renderActionButton(bounty, action),
+        )}
       </div>
     </article>
   );
@@ -308,21 +375,47 @@ function App() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    function goOnline() {
+      setIsOffline(false);
+    }
+    function goOffline() {
+      setIsOffline(true);
+    }
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState(initialFilters.searchQuery);
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(initialFilters.searchQuery);
-  
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(
+    initialFilters.searchQuery,
+  );
+
   // Debounced search update
-  const debouncedSetSearchQuery = useMemo(() => debounce(setDebouncedSearchQuery, 300), []);
-  
+  const debouncedSetSearchQuery = useMemo(
+    () => debounce(setDebouncedSearchQuery, 300),
+    [],
+  );
+
   useEffect(() => {
     debouncedSetSearchQuery(searchQuery);
   }, [searchQuery, debouncedSetSearchQuery]);
-  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(initialFilters.statusFilter);
+  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(
+    initialFilters.statusFilter,
+  );
   const [minReward, setMinReward] = useState(initialFilters.minReward);
   const [maxReward, setMaxReward] = useState(initialFilters.maxReward);
   const [repoFilter, setRepoFilter] = useState(initialFilters.repoFilter);
   const [sortOption, setSortOption] = useState(initialFilters.sortOption);
-  const [sortDirection, setSortDirection] = useState(initialFilters.sortDirection);
+  const [sortDirection, setSortDirection] = useState(
+    initialFilters.sortDirection,
+  );
   const [pathname, setPathname] = useState(window.location.pathname);
   const detailId = useMemo(() => {
     const match = pathname.match(/^\/bounties\/([^/]+)$/);
@@ -332,18 +425,25 @@ function App() {
   const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [profileContributor, setProfileContributor] = useState("");
-  const [profileStatus, setProfileStatus] = useState<"all" | BountyStatus>("all");
+  const [profileStatus, setProfileStatus] = useState<"all" | BountyStatus>(
+    "all",
+  );
 
   // Submission checklist modal state
-  const [submissionModalBounty, setSubmissionModalBounty] = useState<Bounty | null>(null);
-  const [submissionModalSubmitting, setSubmissionModalSubmitting] = useState(false);
-  const [submissionModalError, setSubmissionModalError] = useState<string | null>(null);
-  const [submissionModalData, setSubmissionModalData] = useState<Partial<SubmissionFormData> | undefined>(undefined);
+  const [submissionModalBounty, setSubmissionModalBounty] =
+    useState<Bounty | null>(null);
+  const [submissionModalSubmitting, setSubmissionModalSubmitting] =
+    useState(false);
+  const [submissionModalError, setSubmissionModalError] = useState<
+    string | null
+  >(null);
+  const [submissionModalData, setSubmissionModalData] = useState<
+    Partial<SubmissionFormData> | undefined
+  >(undefined);
 
   useEffect(() => {
     detailIdRef.current = detailId;
   }, [detailId]);
-
 
   async function refresh(signal?: AbortSignal): Promise<void> {
     const [bountyData, issueData] = await Promise.all([
@@ -355,7 +455,9 @@ function App() {
 
     const currentDetailId = detailIdRef.current;
     if (currentDetailId) {
-      const refreshedDetailBounty = bountyData.find((bounty) => bounty.id === currentDetailId);
+      const refreshedDetailBounty = bountyData.find(
+        (bounty) => bounty.id === currentDetailId,
+      );
       if (refreshedDetailBounty) {
         setDetailBounty(refreshedDetailBounty);
       }
@@ -371,7 +473,9 @@ function App() {
         await refresh(signal);
       } catch (err) {
         if (signal.aborted) return; // component unmounted — ignore
-        setError(err instanceof Error ? err.message : "Failed to load project data.");
+        setError(
+          err instanceof Error ? err.message : "Failed to load project data.",
+        );
       } finally {
         if (!signal.aborted) {
           setLoading(false);
@@ -397,7 +501,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (pathname.startsWith("/bounties/") || pathname.startsWith("/repo/")) return;
+    if (pathname.startsWith("/bounties/") || pathname.startsWith("/repo/"))
+      return;
     const params = new URLSearchParams();
 
     if (debouncedSearchQuery.trim() !== "") {
@@ -431,14 +536,27 @@ function App() {
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [maxReward, minReward, pathname, debouncedSearchQuery, statusFilter, repoFilter, sortOption, sortDirection]);
+  }, [
+    maxReward,
+    minReward,
+    pathname,
+    debouncedSearchQuery,
+    statusFilter,
+    repoFilter,
+    sortOption,
+    sortDirection,
+  ]);
 
   useEffect(() => {
     function handlePopState() {
       const nextPathname = window.location.pathname;
       setPathname(nextPathname);
 
-      if (nextPathname.startsWith("/bounties/") || nextPathname.startsWith("/repo/")) return;
+      if (
+        nextPathname.startsWith("/bounties/") ||
+        nextPathname.startsWith("/repo/")
+      )
+        return;
       const filters = readInitialFilters();
       setSearchQuery(filters.searchQuery);
       setStatusFilter(filters.statusFilter);
@@ -465,9 +583,15 @@ function App() {
     );
     return {
       liveBounties: activePool.length,
-      fundedVolume: bounties.reduce((sum: number, bounty: Bounty) => sum + bounty.amount, 0),
-      openIssues: bounties.filter((bounty: Bounty) => bounty.status === "open").length,
-      shippedRewards: bounties.filter((bounty: Bounty) => bounty.status === "released").length,
+      fundedVolume: bounties.reduce(
+        (sum: number, bounty: Bounty) => sum + bounty.amount,
+        0,
+      ),
+      openIssues: bounties.filter((bounty: Bounty) => bounty.status === "open")
+        .length,
+      shippedRewards: bounties.filter(
+        (bounty: Bounty) => bounty.status === "released",
+      ).length,
     };
   }, [bounties]);
 
@@ -507,14 +631,13 @@ function App() {
     try {
       await exportReleasedPayoutsCsv();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to export payouts.");
+      setError(
+        err instanceof Error ? err.message : "Failed to export payouts.",
+      );
     } finally {
       setExporting(false);
     }
   }
-
-
-
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -575,7 +698,9 @@ function App() {
       <button
         key={action.action}
         type="button"
-        className={action.action === "refund" ? "ghost-button" : "secondary-button"}
+        className={
+          action.action === "refund" ? "ghost-button" : "secondary-button"
+        }
         title={action.title}
         onClick={onClick}
       >
@@ -586,7 +711,12 @@ function App() {
 
   const repoRoute = useMemo(() => {
     const match = pathname.match(/^\/repo\/([^/]+)\/([^/]+)$/);
-    return match ? { owner: decodeURIComponent(match[1]), name: decodeURIComponent(match[2]) } : null;
+    return match
+      ? {
+          owner: decodeURIComponent(match[1]),
+          name: decodeURIComponent(match[2]),
+        }
+      : null;
   }, [pathname]);
 
   // Fetch single bounty via dedicated API endpoint instead of filtering the full list
@@ -616,7 +746,9 @@ function App() {
   }, [detailId]);
 
   const filteredBounties = useMemo(() => {
-    const effectiveRepoFilter = repoRoute ? `${repoRoute.owner}/${repoRoute.name}` : repoFilter;
+    const effectiveRepoFilter = repoRoute
+      ? `${repoRoute.owner}/${repoRoute.name}`
+      : repoFilter;
     const filtered = filterBounties(bounties, {
       searchQuery: debouncedSearchQuery,
       statusFilter,
@@ -626,14 +758,27 @@ function App() {
       sortOption,
       sortDirection,
     });
-    
+
     // Apply sorting
-    return sortBounties(filtered, { option: sortOption, direction: sortDirection });
-  }, [bounties, debouncedSearchQuery, statusFilter, minReward, maxReward, repoFilter, repoRoute, sortOption, sortDirection]);
+    return sortBounties(filtered, {
+      option: sortOption,
+      direction: sortDirection,
+    });
+  }, [
+    bounties,
+    debouncedSearchQuery,
+    statusFilter,
+    minReward,
+    maxReward,
+    repoFilter,
+    repoRoute,
+    sortOption,
+    sortDirection,
+  ]);
 
   const groupedBounties = useMemo(() => {
     if (repoRoute) {
-      return { [repoRoute.owner + '/' + repoRoute.name]: filteredBounties };
+      return { [repoRoute.owner + "/" + repoRoute.name]: filteredBounties };
     }
     const groups: Record<string, typeof filteredBounties> = {};
     filteredBounties.forEach((bounty) => {
@@ -651,22 +796,27 @@ function App() {
     const avatarUrl = bounty ? `https://github.com/${owner}.png?size=72` : "";
 
     return (
-      <BountyDetailPage
-        bounty={bounty}
-        loading={detailLoading}
-        onBack={() => navigate("/")}
-        owner={owner}
-        avatarUrl={avatarUrl}
-        statusCopy={statusCopy}
-        actionCopy={actionCopy}
-        renderActionButton={renderActionButton}
-        formatTimestamp={formatTimestamp}
-      />
+      <Suspense fallback={<div className="empty-state">Loading bounty...</div>}>
+        <BountyDetailPage
+          bounty={bounty}
+          loading={detailLoading}
+          onBack={() => navigate("/")}
+          owner={owner}
+          avatarUrl={avatarUrl}
+          statusCopy={statusCopy}
+          actionCopy={actionCopy}
+          renderActionButton={renderActionButton}
+          formatTimestamp={formatTimestamp}
+        />
+      </Suspense>
     );
   }
 
   async function handleReserve(bounty: Bounty) {
-    const contributor = window.prompt("Contributor Stellar address", bounty.contributor ?? "");
+    const contributor = window.prompt(
+      "Contributor Stellar address",
+      bounty.contributor ?? "",
+    );
     if (!contributor) return;
     const contributorError = validateStellarPublicKey(contributor);
     if (contributorError) {
@@ -678,7 +828,9 @@ function App() {
       await reserveBounty(bounty.id, contributor.trim());
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reserve bounty.");
+      setError(
+        err instanceof Error ? err.message : "Failed to reserve bounty.",
+      );
     }
   }
 
@@ -707,48 +859,67 @@ function App() {
       setSubmissionModalData(undefined);
       await refresh();
     } catch (err) {
-      setSubmissionModalError(err instanceof Error ? err.message : "Failed to submit bounty.");
+      setSubmissionModalError(
+        err instanceof Error ? err.message : "Failed to submit bounty.",
+      );
     } finally {
       setSubmissionModalSubmitting(false);
     }
   }
 
   async function handleRelease(bounty: Bounty) {
-    const maintainer = window.prompt("Maintainer Stellar address", bounty.maintainer);
+    const maintainer = window.prompt(
+      "Maintainer Stellar address",
+      bounty.maintainer,
+    );
     if (!maintainer) return;
     const maintainerError = validateStellarPublicKey(maintainer);
     if (maintainerError) {
       window.alert(maintainerError);
       return;
     }
-    const transactionHash = window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
+    const transactionHash =
+      window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
     try {
       setError(null);
-      await releaseBounty(bounty.id, maintainer.trim(), transactionHash || undefined);
+      await releaseBounty(
+        bounty.id,
+        maintainer.trim(),
+        transactionHash || undefined,
+      );
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to release bounty.");
+      setError(
+        err instanceof Error ? err.message : "Failed to release bounty.",
+      );
     }
   }
 
   async function handleRefund(bounty: Bounty) {
-    const maintainer = window.prompt("Maintainer Stellar address", bounty.maintainer);
+    const maintainer = window.prompt(
+      "Maintainer Stellar address",
+      bounty.maintainer,
+    );
     if (!maintainer) return;
     const maintainerError = validateStellarPublicKey(maintainer);
     if (maintainerError) {
       window.alert(maintainerError);
       return;
     }
-    const transactionHash = window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
+    const transactionHash =
+      window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
     try {
       setError(null);
-      await refundBounty(bounty.id, maintainer.trim(), transactionHash || undefined);
+      await refundBounty(
+        bounty.id,
+        maintainer.trim(),
+        transactionHash || undefined,
+      );
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to refund bounty.");
     }
   }
-
 
   return (
     <div className="page-shell">
@@ -769,9 +940,9 @@ function App() {
           <span className="eyebrow">Stellar + Open Source</span>
           <h1>Fund GitHub issues with on-chain style escrow.</h1>
           <p>
-            Stellar Bounty Board turns backlog items into funded contribution lanes.
-            Maintainers lock a reward, contributors reserve the work, and payout flows
-            through a simple review lifecycle.
+            Stellar Bounty Board turns backlog items into funded contribution
+            lanes. Maintainers lock a reward, contributors reserve the work, and
+            payout flows through a simple review lifecycle.
           </p>
           <div className="hero-actions">
             <a href="#create" className="primary-link">
@@ -802,7 +973,9 @@ function App() {
           </div>
           <div className="hero-panel__row">
             <Coins size={18} />
-            <span>Built to graduate from demo backend to Soroban source of truth</span>
+            <span>
+              Built to graduate from demo backend to Soroban source of truth
+            </span>
           </div>
         </section>
       </header>
@@ -812,13 +985,16 @@ function App() {
           <div className="hero-panel__row">
             <GitBranch size={18} />
             <span>
-              <strong>{repoRoute.owner}/{repoRoute.name}</strong> repository
+              <strong>
+                {repoRoute.owner}/{repoRoute.name}
+              </strong>{" "}
+              repository
             </span>
           </div>
           <div className="hero-panel__row">
             <ExternalLink size={18} />
             <span>
-              <a 
+              <a
                 href={`https://github.com/${repoRoute.owner}/${repoRoute.name}`}
                 target="_blank"
                 rel="noreferrer"
@@ -831,10 +1007,7 @@ function App() {
           <div className="hero-panel__row">
             <ArrowUpRight size={18} />
             <span>
-              <button 
-                className="ghost-button"
-                onClick={() => navigate("/")}
-              >
+              <button className="ghost-button" onClick={() => navigate("/")}>
                 View all repositories
               </button>
             </span>
@@ -861,12 +1034,17 @@ function App() {
         </article>
       </section>
 
+      {isOffline && (
+        <div className="offline-banner">
+          You are offline. Data may be stale.
+        </div>
+      )}
       {error && <div className="error-banner">{error}</div>}
 
       {profileContributor && (
-        <RecommendedBounties 
-          recommendations={recommendations} 
-          loading={loading} 
+        <RecommendedBounties
+          recommendations={recommendations}
+          loading={loading}
         />
       )}
 
@@ -885,7 +1063,9 @@ function App() {
               Repository
               <input
                 value={form.repo}
-                onChange={(event) => setForm({ ...form, repo: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, repo: event.target.value })
+                }
                 placeholder="owner/repo"
               />
             </label>
@@ -897,7 +1077,10 @@ function App() {
                   type="number"
                   value={form.issueNumber}
                   onChange={(event) =>
-                    setForm({ ...form, issueNumber: Number(event.target.value) })
+                    setForm({
+                      ...form,
+                      issueNumber: Number(event.target.value),
+                    })
                   }
                 />
               </label>
@@ -908,7 +1091,9 @@ function App() {
                   type="number"
                   min="1"
                   value={form.amount}
-                  onChange={(event) => setForm({ ...form, amount: Number(event.target.value) })}
+                  onChange={(event) =>
+                    setForm({ ...form, amount: Number(event.target.value) })
+                  }
                 />
               </label>
             </div>
@@ -917,7 +1102,9 @@ function App() {
               Issue title
               <input
                 value={form.title}
-                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, title: event.target.value })
+                }
                 placeholder="Example: Add WebSocket payout updates"
               />
             </label>
@@ -926,7 +1113,9 @@ function App() {
               Summary
               <textarea
                 value={form.summary}
-                onChange={(event) => setForm({ ...form, summary: event.target.value })}
+                onChange={(event) =>
+                  setForm({ ...form, summary: event.target.value })
+                }
                 placeholder="What should a contributor build?"
                 rows={4}
               />
@@ -937,23 +1126,35 @@ function App() {
                 Maintainer address
                 <input
                   value={form.maintainer}
-                  onChange={(event) => setForm({ ...form, maintainer: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, maintainer: event.target.value })
+                  }
                   placeholder="G... (56 chars)"
                   inputMode="text"
                   autoComplete="off"
-                  aria-invalid={Boolean(form.maintainer.trim() && validateStellarPublicKey(form.maintainer))}
+                  aria-invalid={Boolean(
+                    form.maintainer.trim() &&
+                    validateStellarPublicKey(form.maintainer),
+                  )}
                 />
-                <small className="field-hint">Enter a Stellar public key (starts with 'G', 56 characters)</small>
-                {form.maintainer.trim() && validateStellarPublicKey(form.maintainer) && (
-                  <small className="field-error">{validateStellarPublicKey(form.maintainer)}</small>
-                )}
+                <small className="field-hint">
+                  Enter a Stellar public key (starts with 'G', 56 characters)
+                </small>
+                {form.maintainer.trim() &&
+                  validateStellarPublicKey(form.maintainer) && (
+                    <small className="field-error">
+                      {validateStellarPublicKey(form.maintainer)}
+                    </small>
+                  )}
               </label>
 
               <label>
                 Token
                 <input
                   value={form.tokenSymbol}
-                  onChange={(event) => setForm({ ...form, tokenSymbol: event.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, tokenSymbol: event.target.value })
+                  }
                 />
               </label>
             </div>
@@ -967,7 +1168,10 @@ function App() {
                   max="90"
                   value={form.deadlineDays}
                   onChange={(event) =>
-                    setForm({ ...form, deadlineDays: Number(event.target.value) })
+                    setForm({
+                      ...form,
+                      deadlineDays: Number(event.target.value),
+                    })
                   }
                 />
               </label>
@@ -977,16 +1181,16 @@ function App() {
                 <input
                   value={form.labels.join(", ")}
                   onChange={(event) =>
-  setForm({
-    ...form,
-    labels: event.target.value
-      .split(",")
-      .map((item) => ({ name: item.trim(), color: "0075ca" }))
-      .filter((item) => item.name !== ""),
-  })
-}
-placeholder="help wanted, backend"
-/>
+                    setForm({
+                      ...form,
+                      labels: event.target.value
+                        .split(",")
+                        .map((item) => ({ name: item.trim(), color: "0075ca" }))
+                        .filter((item) => item.name !== ""),
+                    })
+                  }
+                  placeholder="help wanted, backend"
+                />
               </label>
             </div>
 
@@ -1014,11 +1218,12 @@ placeholder="help wanted, backend"
                 <ArrowUpDown size={16} />
                 <span>Amount</span>
                 <select
-                  value={sortOption === "reward-high" && sortDirection === "desc"
-                    ? "reward-high-desc"
-                    : sortOption === "reward-low" && sortDirection === "asc"
-                    ? "reward-low-asc"
-                    : "reward-high-desc"
+                  value={
+                    sortOption === "reward-high" && sortDirection === "desc"
+                      ? "reward-high-desc"
+                      : sortOption === "reward-low" && sortDirection === "asc"
+                        ? "reward-low-asc"
+                        : "reward-high-desc"
                   }
                   onChange={(event) => {
                     const value = event.target.value;
@@ -1044,11 +1249,15 @@ placeholder="help wanted, backend"
               <div>
                 <span className="panel-kicker">Board filters</span>
                 <p>
-                  Showing <strong>{filteredBounties.length}</strong> of <strong>{bounties.length}</strong>{" "}
-                  bounties
+                  Showing <strong>{filteredBounties.length}</strong> of{" "}
+                  <strong>{bounties.length}</strong> bounties
                 </p>
               </div>
-              <button className="ghost-button filter-reset" type="button" onClick={clearFilters}>
+              <button
+                className="ghost-button filter-reset"
+                type="button"
+                onClick={clearFilters}
+              >
                 Clear filters
               </button>
             </div>
@@ -1072,7 +1281,11 @@ placeholder="help wanted, backend"
                   <SlidersHorizontal size={16} />
                   <select
                     value={statusFilter}
-                    onChange={(event) => setStatusFilter(event.target.value as "all" | BountyStatus)}
+                    onChange={(event) =>
+                      setStatusFilter(
+                        event.target.value as "all" | BountyStatus,
+                      )
+                    }
                   >
                     {statusOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1110,7 +1323,9 @@ placeholder="help wanted, backend"
                   inputMode="numeric"
                   value={minReward}
                   onChange={(event) => setMinReward(event.target.value)}
-                  placeholder={rewardBounds.lowest > 0 ? `${rewardBounds.lowest}` : "0"}
+                  placeholder={
+                    rewardBounds.lowest > 0 ? `${rewardBounds.lowest}` : "0"
+                  }
                 />
               </label>
 
@@ -1123,7 +1338,11 @@ placeholder="help wanted, backend"
                   inputMode="numeric"
                   value={maxReward}
                   onChange={(event) => setMaxReward(event.target.value)}
-                  placeholder={rewardBounds.highest > 0 ? `${rewardBounds.highest}` : "No limit"}
+                  placeholder={
+                    rewardBounds.highest > 0
+                      ? `${rewardBounds.highest}`
+                      : "No limit"
+                  }
                 />
               </label>
 
@@ -1137,7 +1356,9 @@ placeholder="help wanted, backend"
                       const newOption = event.target.value as SortOption;
                       setSortOption(newOption);
                       // Set default direction for this sort option
-                      const optionConfig = sortOptions.find(opt => opt.value === newOption);
+                      const optionConfig = sortOptions.find(
+                        (opt) => opt.value === newOption,
+                      );
                       if (optionConfig) {
                         setSortDirection(optionConfig.direction);
                       }
@@ -1159,25 +1380,36 @@ placeholder="help wanted, backend"
             </div>
           </div>
 
-          <section className="status-glossary" aria-labelledby="status-glossary-title">
+          <section
+            className="status-glossary"
+            aria-labelledby="status-glossary-title"
+          >
             <div className="status-glossary__header">
               <div>
                 <span className="panel-kicker">Contributor guide</span>
                 <h3 id="status-glossary-title">Status quick guide</h3>
               </div>
-              <span className="status-glossary__hint">Hover or tap pills and buttons for a short explanation.</span>
+              <span className="status-glossary__hint">
+                Hover or tap pills and buttons for a short explanation.
+              </span>
             </div>
             <div className="status-glossary__list">
               {statusGlossary.map((item) => (
                 <article className="status-glossary__item" key={item.status}>
-                  <span className={`status-pill status-pill--${item.status}`}>{item.label}</span>
+                  <span className={`status-pill status-pill--${item.status}`}>
+                    {item.label}
+                  </span>
                   <p>{item.description}</p>
                 </article>
               ))}
             </div>
           </section>
 
-          <div className="board-status-pills" role="tablist" aria-label="Filter bounties by status">
+          <div
+            className="board-status-pills"
+            role="tablist"
+            aria-label="Filter bounties by status"
+          >
             {boardStatuses.map((status) => (
               <button
                 key={status}
@@ -1203,34 +1435,51 @@ placeholder="help wanted, backend"
               {Object.entries(groupedBounties).map(([repo, repoBounties]) => (
                 <div key={repo} className="repo-group">
                   <div className="repo-group__header">
-                    <h3 
+                    <h3
                       className="repo-group__title"
-                      onClick={() => navigate(`/repo/${repo.split('/')[0]}/${repo.split('/')[1]}`)}
+                      onClick={() =>
+                        navigate(
+                          `/repo/${repo.split("/")[0]}/${repo.split("/")[1]}`,
+                        )
+                      }
                       role="link"
                       tabIndex={0}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          navigate(`/repo/${repo.split('/')[0]}/${repo.split('/')[1]}`);
+                          navigate(
+                            `/repo/${repo.split("/")[0]}/${repo.split("/")[1]}`,
+                          );
                         }
                       }}
                     >
                       {repo}
                     </h3>
-                    <span className="repo-count">{repoBounties.length} bounties</span>
+                    <span className="repo-count">
+                      {repoBounties.length} bounties
+                    </span>
                   </div>
                   <div className="repo-group__metrics">
                     <div className="repo-metric">
                       <span className="repo-metric__label">Open</span>
-                      <span className="repo-metric__value">{repoBounties.filter(b => b.status === 'open').length}</span>
+                      <span className="repo-metric__value">
+                        {repoBounties.filter((b) => b.status === "open").length}
+                      </span>
                     </div>
                     <div className="repo-metric">
                       <span className="repo-metric__label">Funded</span>
-                      <span className="repo-metric__value">{repoBounties.reduce((sum, b) => sum + b.amount, 0)} XLM</span>
+                      <span className="repo-metric__value">
+                        {repoBounties.reduce((sum, b) => sum + b.amount, 0)} XLM
+                      </span>
                     </div>
                     <div className="repo-metric">
                       <span className="repo-metric__label">Paid</span>
-                      <span className="repo-metric__value">{repoBounties.filter(b => b.status === 'released').reduce((sum, b) => sum + b.amount, 0)} XLM</span>
+                      <span className="repo-metric__value">
+                        {repoBounties
+                          .filter((b) => b.status === "released")
+                          .reduce((sum, b) => sum + b.amount, 0)}{" "}
+                        XLM
+                      </span>
                     </div>
                   </div>
                   <div className="repo-group__bounties">
@@ -1243,28 +1492,39 @@ placeholder="help wanted, backend"
                       />
                     ))}
                   </div>
-            </div>
-          ))}
+                </div>
+              ))}
             </div>
           ) : (
             <div className="empty-state">
               <div className="empty-state__content">
                 <h3>No bounties found</h3>
                 <p>
-                  {debouncedSearchQuery && (
-                    <>No bounties match "<strong>{debouncedSearchQuery}</strong>"</>
-                  ) || statusFilter !== "all" || minReward || maxReward || repoFilter ? (
+                  {(debouncedSearchQuery && (
+                    <>
+                      No bounties match "<strong>{debouncedSearchQuery}</strong>
+                      "
+                    </>
+                  )) ||
+                  statusFilter !== "all" ||
+                  minReward ||
+                  maxReward ||
+                  repoFilter ? (
                     <>No bounties match the current filters</>
                   ) : (
                     <>No bounties available yet</>
                   )}
                 </p>
                 <div className="empty-state__suggestions">
-                  <p><strong>Suggestions:</strong></p>
+                  <p>
+                    <strong>Suggestions:</strong>
+                  </p>
                   <ul>
                     <li>Try adjusting your search terms or filters</li>
                     <li>Check back later for new bounties</li>
-                    <li>Browse all repositories to see available opportunities</li>
+                    <li>
+                      Browse all repositories to see available opportunities
+                    </li>
                   </ul>
                 </div>
               </div>
@@ -1287,15 +1547,17 @@ placeholder="help wanted, backend"
             <article className="issue-card" key={issue.id}>
               <div className="issue-card__top">
                 <strong>{issue.id}</strong>
-                <span className={`impact-chip impact-chip--${issue.impact}`}>{issue.impact}</span>
+                <span className={`impact-chip impact-chip--${issue.impact}`}>
+                  {issue.impact}
+                </span>
               </div>
               <h3>{issue.title}</h3>
               <p> className="items-center text-center"{issue.summary}</p>
               <div className="chip-row">
                 {issue.labels.map((label) => (
                   <span className="chip" key={label.name}>
-  {label.name}
-</span>
+                    {label.name}
+                  </span>
                 ))}
               </div>
             </article>
@@ -1321,15 +1583,27 @@ placeholder="help wanted, backend"
               placeholder="G... (Stellar address)"
               inputMode="text"
               autoComplete="off"
-              aria-invalid={Boolean(profileContributor.trim() && validateStellarPublicKey(profileContributor))}
+              aria-invalid={Boolean(
+                profileContributor.trim() &&
+                validateStellarPublicKey(profileContributor),
+              )}
             />
-            <small className="field-hint">Enter a Stellar public key (starts with 'G', 56 characters)</small>
-            {profileContributor.trim() && validateStellarPublicKey(profileContributor) && (
-              <small className="field-error">{validateStellarPublicKey(profileContributor)}</small>
-            )}
+            <small className="field-hint">
+              Enter a Stellar public key (starts with 'G', 56 characters)
+            </small>
+            {profileContributor.trim() &&
+              validateStellarPublicKey(profileContributor) && (
+                <small className="field-error">
+                  {validateStellarPublicKey(profileContributor)}
+                </small>
+              )}
           </label>
 
-          <div className="filter-row" role="tablist" aria-label="Filter by bounty status">
+          <div
+            className="filter-row"
+            role="tablist"
+            aria-label="Filter by bounty status"
+          >
             {contributorStatuses.map((status) => (
               <button
                 key={status}
@@ -1350,12 +1624,13 @@ placeholder="help wanted, backend"
           <div className="empty-state">Loading contributor history...</div>
         ) : !contributorMetrics.contributor ? (
           <div className="empty-state">
-            Enter a contributor address to see reserved, submitted, and released bounties plus total
-            earnings.
+            Enter a contributor address to see reserved, submitted, and released
+            bounties plus total earnings.
           </div>
         ) : contributorMetrics.filtered.length === 0 ? (
           <div className="empty-state">
-            No bounties found for <strong>{shortAddress(contributorMetrics.contributor)}</strong>
+            No bounties found for{" "}
+            <strong>{shortAddress(contributorMetrics.contributor)}</strong>
             {profileStatus === "all" ? "." : ` in "${profileStatus}" status.`}
           </div>
         ) : (
@@ -1363,33 +1638,46 @@ placeholder="help wanted, backend"
             <div className="profile-metrics">
               <div className="profile-metric">
                 <span className="meta-label">Reserved</span>
-                <strong>{contributorMetrics.countsByStatus.get("reserved") ?? 0}</strong>
+                <strong>
+                  {contributorMetrics.countsByStatus.get("reserved") ?? 0}
+                </strong>
               </div>
               <div className="profile-metric">
                 <span className="meta-label">Submitted</span>
-                <strong>{contributorMetrics.countsByStatus.get("submitted") ?? 0}</strong>
+                <strong>
+                  {contributorMetrics.countsByStatus.get("submitted") ?? 0}
+                </strong>
               </div>
               <div className="profile-metric">
                 <span className="meta-label">Released</span>
-                <strong>{contributorMetrics.countsByStatus.get("released") ?? 0}</strong>
+                <strong>
+                  {contributorMetrics.countsByStatus.get("released") ?? 0}
+                </strong>
               </div>
               <div className="profile-metric">
                 <span className="meta-label">Refunded</span>
-                <strong>{contributorMetrics.countsByStatus.get("refunded") ?? 0}</strong>
+                <strong>
+                  {contributorMetrics.countsByStatus.get("refunded") ?? 0}
+                </strong>
               </div>
               <div className="profile-metric">
                 <span className="meta-label">Expired</span>
-                <strong>{contributorMetrics.countsByStatus.get("expired") ?? 0}</strong>
+                <strong>
+                  {contributorMetrics.countsByStatus.get("expired") ?? 0}
+                </strong>
               </div>
             </div>
 
             <div className="profile-earnings">
               <span className="meta-label">Total earnings (released)</span>
               <div className="earnings-row">
-                {Array.from(contributorMetrics.releasedTotalsByAsset.entries()).length === 0 ? (
+                {Array.from(contributorMetrics.releasedTotalsByAsset.entries())
+                  .length === 0 ? (
                   <strong>0</strong>
                 ) : (
-                  Array.from(contributorMetrics.releasedTotalsByAsset.entries()).map(([asset, total]) => (
+                  Array.from(
+                    contributorMetrics.releasedTotalsByAsset.entries(),
+                  ).map(([asset, total]) => (
                     <div className="earnings-chip" key={asset}>
                       <strong>{total}</strong>
                       <span>{asset}</span>
@@ -1404,7 +1692,11 @@ placeholder="help wanted, backend"
                 <article className="bounty-card" key={bounty.id}>
                   <div className="bounty-card__top">
                     <div>
-                      <span className={`status-pill status-pill--${bounty.status}`}>{bounty.status}</span>
+                      <span
+                        className={`status-pill status-pill--${bounty.status}`}
+                      >
+                        {bounty.status}
+                      </span>
                       <h3>{bounty.title}</h3>
                     </div>
                     <BountyAmount bounty={bounty} />
@@ -1434,7 +1726,12 @@ placeholder="help wanted, backend"
                       <div>
                         <span className="meta-label">Submission</span>
                         <strong>
-                          <a className="inline-link" href={bounty.submissionUrl} target="_blank" rel="noreferrer">
+                          <a
+                            className="inline-link"
+                            href={bounty.submissionUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             View link
                           </a>
                         </strong>
