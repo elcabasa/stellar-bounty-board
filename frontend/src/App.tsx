@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import {
   createBounty,
   exportReleasedPayoutsCsv,
+  getBounty,
   listBounties,
   listOpenIssues,
   refundBounty,
@@ -266,6 +267,8 @@ function App() {
   }, [bounties, profileContributor]);
 
   const [profile, setProfile] = useState(() => createDefaultProfile());
+  const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const recommendations = useMemo(() => {
     return generateRecommendations(bounties, profile);
   }, [bounties, profile]);
@@ -365,10 +368,31 @@ function App() {
     return match ? { owner: decodeURIComponent(match[1]), name: decodeURIComponent(match[2]) } : null;
   }, [pathname]);
 
-  const detailBounty = useMemo(() => {
-    if (!detailId) return null;
-    return bounties.find((bounty) => bounty.id === detailId) ?? null;
-  }, [bounties, detailId]);
+  // Fetch single bounty via dedicated API endpoint instead of filtering the full list
+  useEffect(() => {
+    if (!detailId) {
+      setDetailBounty(null);
+      return;
+    }
+    let active = true;
+    setDetailLoading(true);
+    getBounty(detailId)
+      .then((bounty) => {
+        if (active) {
+          setDetailBounty(bounty);
+          setDetailLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDetailBounty(null);
+          setDetailLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [detailId]);
 
   const filteredBounties = useMemo(() => {
     const effectiveRepoFilter = repoRoute ? `${repoRoute.owner}/${repoRoute.name}` : repoFilter;
@@ -408,7 +432,7 @@ function App() {
     return (
       <BountyDetailPage
         bounty={bounty}
-        loading={loading}
+        loading={detailLoading}
         onBack={() => navigate("/")}
         owner={owner}
         avatarUrl={avatarUrl}

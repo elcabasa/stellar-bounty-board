@@ -1,5 +1,6 @@
 import cors from "cors";
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
+import { randomUUID } from "node:crypto";
 import { buildCorsOptions } from "./middleware/corsOptions";
 import {
   createBounty,
@@ -22,12 +23,47 @@ import {
   submitBountySchema,
   zodErrorMessage,
 } from "./validation/schemas";
-import { requestContextMiddleware } from "./middleware/requestContext";
+import { logStructured } from "./logger";
 import { limiter } from "./utils";
 import {
   captureRawBody,
   createGitHubWebhookSignatureMiddleware,
 } from "./webhooks/signatureVerification";
+
+const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
+
+function resolveRequestId(req: Request): string {
+  const raw = req.headers["x-request-id"];
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (INCOMING_REQUEST_ID.test(trimmed)) {
+      return trimmed;
+    }
+  }
+  return randomUUID();
+}
+
+function requestContextMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const requestId = resolveRequestId(req);
+  req.requestId = requestId;
+  res.setHeader("X-Request-ID", requestId);
+
+  const start = process.hrtime.bigint();
+
+  res.on("finish", () => {
+    const durationNs = process.hrtime.bigint() - start;
+    const durationMs = Number(durationNs) / 1e6;
+    logStructured("info", "http_request", {
+      requestId,
+      method: req.method,
+      path: req.path || "/",
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 1000) / 1000,
+    });
+  });
+
+  next();
+}
 
 export const app = express();
 
@@ -287,6 +323,21 @@ app.get("/api/bounties/:id/events", (req: Request, res: Response) => {
     res.json({ data: events });
   } catch (error) {
     sendError(res, req, error);
+  }
+});
+
+app.get("/api/bounties/:id", (req: Request, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    const bounties = listBounties();
+    const bounty = bounties.find((b) => b.id === id);
+    if (!bounty) {
+      jsonError(res, req, 404, "Bounty not found.");
+      return;
+    }
+    res.json({ data: bounty });
+  } catch (error) {
+    sendError(res, req, error, 400);
   }
 });
 
