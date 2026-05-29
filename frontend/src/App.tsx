@@ -38,6 +38,7 @@ import {
 import SubmissionChecklistModal, { type SubmissionFormData } from "./SubmissionChecklistModal";
 import { BountyRecommendation, ContributorProfile, createDefaultProfile, generateRecommendations, updateProfileFromBounties } from "./recommendations";
 import RecommendedBounties from "./RecommendedBounties";
+import ContributorProfilePage from "./ContributorProfilePage";
 import { statusCopy, actionCopy, readInitialFilters, FilterState, statusOptions, statusGlossary, sortOptions } from "./constants";
 import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMetrics, getUniqueRepos, getRepoMetrics, sortBounties, debounce, SortOption, SortState, xlmToUsd } from "./utils";
 import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
@@ -590,6 +591,11 @@ function App() {
     return match ? { owner: decodeURIComponent(match[1]), name: decodeURIComponent(match[2]) } : null;
   }, [pathname]);
 
+  const contributorRoute = useMemo(() => {
+    const match = pathname.match(/^\/contributor\/([^/]+)$/);
+    return match ? { address: decodeURIComponent(match[1]) } : null;
+  }, [pathname]);
+
   // Fetch single bounty via dedicated API endpoint instead of filtering the full list
   useEffect(() => {
     if (!detailId) {
@@ -662,6 +668,15 @@ function App() {
         actionCopy={actionCopy}
         renderActionButton={renderActionButton}
         formatTimestamp={formatTimestamp}
+      />
+    );
+  }
+
+  if (contributorRoute) {
+    return (
+      <ContributorProfilePage
+        address={contributorRoute.address}
+        onBack={() => navigate("/")}
       />
     );
   }
