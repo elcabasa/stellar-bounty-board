@@ -48,6 +48,7 @@ import UsdAmount from "./UsdAmount";
 import SkeletonBountyCard from "./SkeletonBountyCard";
 import EmptyState from "./EmptyState";
 import { ShortcutsHelpOverlay } from "./ShortcutsHelpOverlay";
+import BountyCountdown from "./BountyCountdown";
 
 // Lazy-load BountyDetailPage — it is only rendered on /bounties/:id routes,
 // so deferring it keeps the initial board bundle smaller.
@@ -96,15 +97,6 @@ const initialForm: CreateBountyPayload = {
 
 
 
-function formatRelativeDeadline(deadlineAt: number): string {
-  const now = Math.floor(Date.now() / 1000);
-  const diff = deadlineAt - now;
-  const days = Math.ceil(Math.abs(diff) / (24 * 60 * 60));
-  if (diff >= 0) {
-    return `${days} day${days === 1 ? "" : "s"} left`;
-  }
-  return `${days} day${days === 1 ? "" : "s"} overdue`;
-}
 
 function shortAddress(value: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
@@ -256,7 +248,7 @@ const BountyCard = memo(function BountyCard({ bounty, onOpen, renderActionButton
         </div>
         <div>
           <span className="meta-label">Deadline</span>
-          <strong>{formatRelativeDeadline(bounty.deadlineAt)}</strong>
+          <strong><BountyCountdown deadlineAt={bounty.deadlineAt} status={bounty.status} /></strong>
         </div>
         <div>
           <span className="meta-label">Maintainer</span>
@@ -1404,7 +1396,7 @@ function App() {
                               </div>
                               <div>
                                 <span className="meta-label">Deadline</span>
-                                <strong>{formatRelativeDeadline(bounty.deadlineAt)}</strong>
+                                <strong><BountyCountdown deadlineAt={bounty.deadlineAt} status={bounty.status} /></strong>
                               </div>
                               <div>
                                 <span className="meta-label">Maintainer</span>

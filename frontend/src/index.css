@@ -1736,3 +1736,15 @@ select {
         (no CSS animation), but any wrapping transition is already covered
         by the global rule above. No extra rule needed. */
 }
+
+.countdown {
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-left: 0.5rem;
+}
+
+.countdown--urgent {
+  color: #ff4d4d;
+  font-weight: bold;
+  opacity: 1;
+}
