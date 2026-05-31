@@ -34,6 +34,7 @@ import {
   captureRawBody,
   createGitHubWebhookSignatureMiddleware,
 } from "./webhooks/signatureVerification";
+import { createBountyCreationSignatureMiddleware, createStellarSignatureAuthMiddleware } from "./middleware/auth";
 import { handleGitHubPrEvent } from "./webhooks/githubPrHandler";
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
@@ -285,7 +286,7 @@ app.get("/api/bounties/released/export.csv", (req: Request, res: Response) => {
   }
 });
 
-app.post("/api/bounties", mutationLimiter, async (req: Request, res: Response) => {
+app.post("/api/bounties", mutationLimiter, createBountyCreationSignatureMiddleware(), async (req: Request, res: Response) => {
   const parsed = createBountySchema.safeParse(req.body);
   if (!parsed.success) {
     jsonError(res, req, 400, zodErrorMessage(parsed.error));
@@ -335,7 +336,7 @@ app.post("/api/bounties/:id/submit", mutationLimiter, async (req: Request, res: 
   }
 });
 
-app.post("/api/bounties/:id/release", mutationLimiter, async (req: Request, res: Response) => {
+app.post("/api/bounties/:id/release", mutationLimiter, createStellarSignatureAuthMiddleware(), async (req: Request, res: Response) => {
   const parsedBody = maintainerActionSchema.safeParse(req.body);
   if (!parsedBody.success) {
     jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
@@ -354,7 +355,7 @@ app.post("/api/bounties/:id/release", mutationLimiter, async (req: Request, res:
   }
 });
 
-app.post("/api/bounties/:id/refund", mutationLimiter, async (req: Request, res: Response) => {
+app.post("/api/bounties/:id/refund", mutationLimiter, createStellarSignatureAuthMiddleware(), async (req: Request, res: Response) => {
   const parsedBody = maintainerActionSchema.safeParse(req.body);
   if (!parsedBody.success) {
     jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
