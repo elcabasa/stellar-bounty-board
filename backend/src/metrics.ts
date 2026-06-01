@@ -1,5 +1,8 @@
 import client from 'prom-client';
 
+// Clear global registry to prevent duplicate registration errors across tests
+client.register.clear();
+
 // Enable default metrics (process_cpu_seconds_total, process_resident_memory_bytes, etc.)
 const collectDefaultMetrics = client.collectDefaultMetrics;
 

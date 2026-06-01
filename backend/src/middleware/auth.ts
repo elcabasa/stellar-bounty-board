@@ -1,10 +1,10 @@
-import type { Request, RequestHandler } from "express";
-import { Keypair } from "stellar-sdk";
+import type { Request, RequestHandler } from 'express';
+import { Keypair } from 'stellar-sdk';
 
-const HEADER_SIGNATURE = "x-stellar-signature";
-const HEADER_PUBLIC_KEY = "x-stellar-public-key";
-const ENV_PUBLIC_KEY = "MAINTAINER_PUBLIC_KEY";
-const ENV_PUBLIC_KEYS = "MAINTAINER_PUBLIC_KEYS";
+const HEADER_SIGNATURE = 'x-stellar-signature';
+const HEADER_PUBLIC_KEY = 'x-stellar-public-key';
+const ENV_PUBLIC_KEY = 'MAINTAINER_PUBLIC_KEY';
+const ENV_PUBLIC_KEYS = 'MAINTAINER_PUBLIC_KEYS';
 
 interface RawBodyRequest extends Request {
   rawBody?: Buffer;
@@ -18,9 +18,9 @@ function normalizeHeaderValue(headerValue: string | string[] | undefined): strin
 }
 
 function getMaintainerPublicKeys(): string[] {
-  const rawKeys = process.env[ENV_PUBLIC_KEYS] ?? process.env[ENV_PUBLIC_KEY] ?? "";
+  const rawKeys = process.env[ENV_PUBLIC_KEYS] ?? process.env[ENV_PUBLIC_KEY] ?? '';
   return rawKeys
-    .split(",")
+    .split(',')
     .map((value) => value.trim())
     .filter(Boolean);
 }
@@ -32,25 +32,32 @@ function getRequestPayload(req: Request): Buffer {
   }
 
   if (req.body !== undefined && req.body !== null) {
-    return Buffer.from(JSON.stringify(req.body), "utf8");
+    return Buffer.from(JSON.stringify(req.body), 'utf8');
   }
 
-  return Buffer.from(`${req.method} ${req.originalUrl}`, "utf8");
+  return Buffer.from(`${req.method} ${req.originalUrl}`, 'utf8');
 }
 
 function decodeSignatureVariants(signatureHeader: string): Buffer[] {
-  const normalized = signatureHeader.trim().replace(/^(?:0x|sig=|signature=)/i, "").trim();
+  const normalized = signatureHeader
+    .trim()
+    .replace(/^(?:0x|sig=|signature=)/i, '')
+    .trim();
   const candidates: Buffer[] = [];
 
   if (/^[0-9a-fA-F]+$/.test(normalized) && normalized.length % 2 === 0) {
-    candidates.push(Buffer.from(normalized, "hex"));
+    candidates.push(Buffer.from(normalized, 'hex'));
   }
 
-  candidates.push(Buffer.from(normalized, "base64"));
+  candidates.push(Buffer.from(normalized, 'base64'));
   return candidates;
 }
 
-function verifyStellarSignature(publicKey: string, payload: Buffer, signatureHeader: string): boolean {
+function verifyStellarSignature(
+  publicKey: string,
+  payload: Buffer,
+  signatureHeader: string
+): boolean {
   let keypair: Keypair;
   try {
     keypair = Keypair.fromPublicKey(publicKey);
@@ -74,7 +81,7 @@ function verifyStellarSignature(publicKey: string, payload: Buffer, signatureHea
 
 export function createBountyCreationSignatureMiddleware(): RequestHandler {
   return (req, res, next) => {
-    if (process.env.NODE_ENV === "test") {
+    if (process.env.NODE_ENV === 'test') {
       next();
       return;
     }
@@ -88,19 +95,25 @@ export function createBountyCreationSignatureMiddleware(): RequestHandler {
     const body = req.body ?? {};
     const { repo, issueNumber, amount, tokenSymbol, deadlineDays, maintainer } = body;
 
-    if (!maintainer || typeof maintainer !== "string") {
-      res.status(401).json({ error: "Missing maintainer field required for signature verification." });
+    if (!maintainer || typeof maintainer !== 'string') {
+      res
+        .status(401)
+        .json({ error: 'Missing maintainer field required for signature verification.' });
       return;
     }
 
     // Canonical payload the client must sign: { repo, issueNumber, amount, tokenSymbol, deadline }
     const canonicalPayload = Buffer.from(
       JSON.stringify({ repo, issueNumber, amount, tokenSymbol, deadline: deadlineDays }),
-      "utf8",
+      'utf8'
     );
 
     if (!verifyStellarSignature(maintainer, canonicalPayload, signatureHeader)) {
-      res.status(401).json({ error: "Invalid Stellar signature. Signer public key must match maintainer address." });
+      res
+        .status(401)
+        .json({
+          error: 'Invalid Stellar signature. Signer public key must match maintainer address.',
+        });
       return;
     }
 
@@ -108,16 +121,45 @@ export function createBountyCreationSignatureMiddleware(): RequestHandler {
   };
 }
 
+class NonceCache {
+  private nonces = new Map<string, number>();
+
+  has(nonce: string): boolean {
+    const expiry = this.nonces.get(nonce);
+    if (!expiry) return false;
+    if (Date.now() > expiry) {
+      this.nonces.delete(nonce);
+      return false;
+    }
+    return true;
+  }
+
+  add(nonce: string, ttlMs: number) {
+    this.nonces.set(nonce, Date.now() + ttlMs);
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [nonce, expiry] of this.nonces.entries()) {
+      if (now > expiry) {
+        this.nonces.delete(nonce);
+      }
+    }
+  }
+}
+
+const nonceCache = new NonceCache();
+
 export function createStellarSignatureAuthMiddleware(): RequestHandler {
   return (req, res, next) => {
-    if (process.env.NODE_ENV === "test") {
+    if (process.env.NODE_ENV === 'test') {
       next();
       return;
     }
 
     const allowedMaintainerKeys = getMaintainerPublicKeys();
     if (allowedMaintainerKeys.length === 0) {
-      res.status(500).json({ error: "Server maintainer public key configuration is missing." });
+      res.status(500).json({ error: 'Server maintainer public key configuration is missing.' });
       return;
     }
 
@@ -135,19 +177,56 @@ export function createStellarSignatureAuthMiddleware(): RequestHandler {
     }
 
     if (!allowedMaintainerKeys.includes(publicKeyHeader)) {
-      res.status(401).json({ error: "Unauthorized Stellar public key." });
+      res.status(401).json({ error: 'Unauthorized Stellar public key.' });
+      return;
+    }
+
+    // --- REPLAY ATTACK PREVENTION CHECKS ---
+    const { action, bountyId, timestamp } = req.body ?? {};
+
+    if (!action || typeof action !== 'string') {
+      res.status(401).json({ error: 'Invalid or missing action in request body.' });
+      return;
+    }
+
+    if (!bountyId || typeof bountyId !== 'string') {
+      res.status(401).json({ error: 'Invalid or missing bountyId in request body.' });
+      return;
+    }
+
+    if (bountyId !== req.params.id) {
+      res.status(401).json({ error: 'Request bountyId does not match the request path.' });
+      return;
+    }
+
+    if (typeof timestamp !== 'number') {
+      res.status(401).json({ error: 'Invalid or missing timestamp in request body.' });
+      return;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    if (Math.abs(now - timestamp) > 60) {
+      res.status(401).json({ error: 'Signature timestamp has expired or is invalid.' });
+      return;
+    }
+
+    nonceCache.cleanup();
+    if (nonceCache.has(signatureHeader)) {
+      res.status(401).json({ error: 'Replay attack detected: signature already processed.' });
       return;
     }
 
     const payload = getRequestPayload(req);
     if (!verifyStellarSignature(publicKeyHeader, payload, signatureHeader)) {
-      res.status(401).json({ error: "Invalid Stellar signature." });
+      res.status(401).json({ error: 'Invalid Stellar signature.' });
       return;
     }
 
-    const maintainer = typeof req.body?.maintainer === "string" ? req.body.maintainer : undefined;
+    nonceCache.add(signatureHeader, 60 * 1000);
+
+    const maintainer = typeof req.body?.maintainer === 'string' ? req.body.maintainer : undefined;
     if (maintainer && maintainer !== publicKeyHeader) {
-      res.status(401).json({ error: "Request maintainer does not match signer public key." });
+      res.status(401).json({ error: 'Request maintainer does not match signer public key.' });
       return;
     }
 

@@ -1,15 +1,15 @@
 {
   "frontend/src/**/*.{ts,tsx}": [
-    "tsc --noEmit -p frontend/tsconfig.json",
+    "node -e \"require('child_process').execSync('npx tsc --noEmit -p frontend/tsconfig.json', { stdio: 'inherit' })\"",
     "eslint --fix",
     "prettier --write"
   ],
   "backend/src/**/*.ts": [
-    "tsc --noEmit -p backend/tsconfig.json",
+    "node -e \"require('child_process').execSync('npx tsc --noEmit -p backend/tsconfig.json', { stdio: 'inherit' })\"",
     "eslint --fix",
     "prettier --write"
   ],
   "*.{json,md,yaml,yml}": ["prettier --write"],
   "*.sol": ["forge fmt"],
-  "*.{rs}": ["rustfmt"]
+  "*.rs": ["rustfmt"]
 }
