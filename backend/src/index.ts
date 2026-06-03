@@ -2,6 +2,7 @@ import "dotenv/config";
 import { app } from "./app";
 import { logStructured } from "./logger";
 
+
 });
 
 server.keepAliveTimeout = keepAliveTimeout;

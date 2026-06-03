@@ -10,6 +10,7 @@ import { getMetrics, httpRequestDuration } from './metrics';
 import {
   createBounty,
   listBountyAuditLogs,
+  listAllAuditLogs,
   listBounties,
   refundBounty,
   releaseBounty,
@@ -29,9 +30,7 @@ import {
   reserveBountySchema,
   submitBountySchema,
   zodErrorMessage,
-} from './validation/schemas';
-import { logStructured } from './logger';
-import { readLimiter, mutationLimiter } from './utils';
+
 import {
   captureRawBody,
   createGitHubWebhookSignatureMiddleware,
@@ -564,3 +563,25 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
     sendError(res, _req, error);
   }
 });
+
+/**
+ * GET /api/audit-log
+ *
+ * Admin-only endpoint that returns a paginated view of all audit log records
+ * across every bounty.  Requires a valid `x-admin-api-key` header whose value
+ * matches the bcrypt hash stored in `ADMIN_API_KEY_HASH`.
+ */
+app.get(
+  "/api/audit-log",
+  createAdminApiKeyAuthMiddleware(),
+  (req: Request, res: Response) => {
+    try {
+      const limit = parsePaginationValue(req.query.limit, "limit", 50, 1, 200);
+      const offset = parsePaginationValue(req.query.offset, "offset", 0, 0);
+      const page = listAllAuditLogs({ limit, offset });
+      res.json(page);
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  },
+);

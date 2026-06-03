@@ -878,12 +878,7 @@ export function listBountyAuditLogs(
 }
 
 /**
- * Retrieves the event history/timeline for a specific bounty.
- *
- * @param {string} bountyId - The unique ID of the bounty.
- * @returns {BountyEvent[]} An array of event records detailing the bounty's lifecycle events.
- * @throws {Error} If the bounty is not found.
- */
+
 export function getBountyEvents(bountyId: string): BountyEvent[] {
   const records = listBounties();
   const bounty = records.find((b) => b.id === bountyId);
