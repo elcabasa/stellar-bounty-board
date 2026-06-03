@@ -38,7 +38,7 @@ describe('OpenAPI contract — responses match zod schemas', () => {
     const bounty = bountyRecordSchema.strict().parse(createRes.body.data);
 
     // Reserve
-    const reserveBody = { contributor: 'GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGKCEL9LGAQLHFLQ2GN7SY' };
+    const reserveBody = { contributor: 'GBE6AZEUPV75O3Z7OFW4RIMU7DF453AVK5HCXB3PV2I7BBTYEPCOYWSF' };
     reserveBountySchema.parse(reserveBody);
     const reserveRes = await request(app).post(`/api/bounties/${bounty.id}/reserve`).send(reserveBody).expect(200);
     bountyRecordSchema.strict().parse(reserveRes.body.data);

@@ -1,35 +1,19 @@
-# Pull Request Template
-
 ## Description
 
-A brief description of what this PR changes and why it was needed.
+<!-- Please include a summary of the change and which issue is fixed. -->
 
-## What Changed
+## Type of change
 
-- List the main changes made in this PR
-- Be specific about files, features, or fixes
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
 
-## Testing Done
+## Security Checklist
 
-- Describe the testing performed
-- Include how to verify the changes
-- Mention any edge cases tested
+Please review the [SECURITY_CHECKLIST.md](../SECURITY_CHECKLIST.md) and check off any items that apply. Reviewers must sign off on these items before merge.
 
-## Related Issues
-
-Closes #<issue_number>
-Related to #<issue_number>
-
-## Checklist
-
-- [ ] My code follows the project's coding style
-- [ ] I have performed a self-review of my code
-- [ ] I have tested the changes locally
-- [ ] I have updated the documentation if needed
-- [ ] I have added tests for the changes
-- [ ] All existing tests pass with my changes
-- [ ] I have committed my changes with a clear commit message
-
-## Additional Notes
-
-Any additional context, screenshots, or notes about this PR.
+- [ ] Input validation changed
+- [ ] Auth modified
+- [ ] New external fetch
+- [ ] Dependency added
+- [ ] Secret handling

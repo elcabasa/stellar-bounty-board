@@ -196,19 +196,10 @@ async function requestBlob(
 }
 
 export async function listBounties(signal?: AbortSignal): Promise<Bounty[]> {
-  const body = await requestJson<{ data: Bounty[] }>('/bounties', {
+  const body = await requestJson<{ data: Bounty[] }>("/bounties", {
     retry: true,
-    retryLabel: 'Loading bounties',
+    retryLabel: "Loading bounties",
     signal,
-  });
-
-  return body.data;
-}
-
-export async function getBounty(id: string): Promise<Bounty> {
-  const body = await requestJson<{ data: Bounty }>(`/bounties/${id}`, {
-    retry: true,
-    retryLabel: 'Loading bounty',
   });
 
   return body.data;
@@ -219,11 +210,8 @@ export async function getBounty(id: string, signal?: AbortSignal): Promise<Bount
     retry: true,
     retryLabel: "Loading bounty details",
     signal,
-export async function getBounty(id: string): Promise<Bounty> {
-  const body = await requestJson<{ data: Bounty }>(`/bounties/${id}`, {
-    retry: true,
-    retryLabel: "Loading bounty",
   });
+
   return body.data;
 }
 

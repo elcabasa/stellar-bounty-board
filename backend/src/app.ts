@@ -19,8 +19,9 @@ import {
   getMaintainerMetrics,
   getGlobalMetrics,
   getLeaderboard,
+  listBountiesCached,
 } from './services/bountyStore';
-import { listOpenIssues } from './services/openIssues';
+import { listOpenIssues, getOpenIssuesFeedStatus } from './services/openIssues';
 import {
   bountyIdSchema,
   createBountySchema,
@@ -238,14 +239,17 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   res.type('application/xml').send(xml);
 });
 
-app.get('/api/health', (_req: Request, res: Response) => {
+const healthHandler = (_req: Request, res: Response) => {
   res.json({
     service: 'stellar-bounty-board-backend',
     status: 'ok',
     timestamp: new Date().toISOString(),
-    openIssuesFeed,
+    openIssuesFeed: getOpenIssuesFeedStatus(),
   });
-});
+};
+
+app.get('/api/health', healthHandler);
+app.get('/api/health/deep', healthHandler);
 
 app.get('/worker/health', (_req: Request, res: Response) => {
   res.json({
@@ -495,8 +499,9 @@ app.post(
   }
 );
 
-app.get('/api/open-issues', (_req: Request, res: Response) => {
-  res.json({ data: listOpenIssues() });
+app.get('/api/open-issues', async (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'max-age=600');
+  res.json({ data: await listOpenIssues() });
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {

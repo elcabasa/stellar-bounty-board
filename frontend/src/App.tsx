@@ -1,4 +1,4 @@
-
+import { FormEvent, ReactNode, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Coins,
@@ -26,16 +26,27 @@ import {
   releaseBounty,
   reserveBounty,
   submitBounty,
+  getMaintainerMetrics,
 } from "./api";
+import MaintainerAnalyticsPage from "./MaintainerAnalyticsPage";
+import { MaintainerMetrics } from "./types";
+import SubmissionChecklistModal, { type SubmissionFormData } from "./SubmissionChecklistModal";
+import { createDefaultProfile, generateRecommendations } from "./recommendations";
+import RecommendedBounties from "./RecommendedBounties";
+import { statusCopy, actionCopy, readInitialFilters, statusOptions, statusGlossary, sortOptions } from "./constants";
+import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMetrics, getUniqueRepos, getUniqueTokenSymbols, sortBounties, debounce, SortOption, xlmToUsd } from "./utils";
+import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
 
-
+import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
 
 import SkeletonBountyCard from "./SkeletonBountyCard";
 import EmptyState from "./EmptyState";
 import { ShortcutsHelpOverlay } from "./ShortcutsHelpOverlay";
 import BountyCountdown from "./BountyCountdown";
 
-
+// Lazy-load BountyDetailPage — it is only rendered on /bounties/:id routes,
+// so deferring it keeps the initial board bundle smaller.
+const BountyDetailPage = lazy(() => import("./BountyDetailPage"));
 
 const DARK_MODE_KEY = "stellar-bounty-board-theme";
 
@@ -77,6 +88,7 @@ const initialForm: CreateBountyPayload = {
 
 
 
+
 function shortAddress(value: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
@@ -84,10 +96,10 @@ function shortAddress(value: string): string {
 function validateStellarPublicKey(input: string): string | null {
   const value = input.trim();
   if (!value) return "Address is required.";
-  if (!/^G[A-Z0-9]{55}$/.test(value))
-    return "Enter a Stellar public key (starts with 'G', 56 characters)";
+  if (!/^G[A-Z0-9]{55}$/.test(value)) return "Enter a Stellar public key (starts with 'G', 56 characters)";
   return null;
 }
+
 
 const contributorStatuses: Array<BountyStatus | "all"> = [
   "all",
@@ -116,11 +128,7 @@ function formatTimestamp(value?: number): string {
   return new Date(value * 1000).toLocaleString();
 }
 
-const BountyAmount = memo(function BountyAmount({
-  bounty,
-}: {
-  bounty: Bounty;
-}) {
+const BountyAmount = memo(function BountyAmount({ bounty }: { bounty: Bounty }) {
   const [usdAmount, setUsdAmount] = useState<string | null>(null);
 
   useEffect(() => {
@@ -147,9 +155,7 @@ const BountyAmount = memo(function BountyAmount({
 
   return (
     <div className="amount-chip">
-      <strong>
-        {bounty.amount} {bounty.tokenSymbol}
-      </strong>
+      <strong>{bounty.amount} {bounty.tokenSymbol}</strong>
       {usdAmount && <span>{usdAmount}</span>}
     </div>
   );
@@ -160,21 +166,14 @@ type BountyCardProps = {
   onOpen: (id: string) => void;
   renderActionButton: (
     bounty: Bounty,
-    action: {
-      action: "reserve" | "submit" | "release" | "refund";
-      label: string;
-      title: string;
-    },
+    action: { action: "reserve" | "submit" | "release" | "refund"; label: string; title: string },
   ) => ReactNode;
 };
 
 // Custom comparator: skip re-renders when the underlying bounty data is
 // unchanged, even if parent recreated callback identities. `statusCopy` and
 // `actionCopy` come from a stable module-scope import.
-function bountyCardPropsEqual(
-  prev: BountyCardProps,
-  next: BountyCardProps,
-): boolean {
+function bountyCardPropsEqual(prev: BountyCardProps, next: BountyCardProps): boolean {
   const a = prev.bounty;
   const b = next.bounty;
   return (
@@ -194,6 +193,10 @@ function bountyCardPropsEqual(
   );
 }
 
+const BountyCard = memo(function BountyCard({ bounty, onOpen, renderActionButton }: BountyCardProps) {
+  function openCard() {
+    onOpen(bounty.id);
+  }
 
   return (
     <article
@@ -252,9 +255,7 @@ function bountyCardPropsEqual(
         </div>
         <div>
           <span className="meta-label">Contributor</span>
-          <strong>
-            {bounty.contributor ? shortAddress(bounty.contributor) : "Open"}
-          </strong>
+          <strong>{bounty.contributor ? shortAddress(bounty.contributor) : "Open"}</strong>
         </div>
         {bounty.status === "released" && bounty.releasedTxHash && (
           <div>
@@ -272,32 +273,22 @@ function bountyCardPropsEqual(
 
       <div className="chip-row">
         {bounty.labels.map((label) => (
-          <span className="chip" key={label.name}>
-            {label.name}
-          </span>
+          <span className="chip" key={label.name}>{label.name}</span>
         ))}
       </div>
 
       <p className="status-helper">
-        <strong>{statusCopy[bounty.status].label}:</strong>{" "}
-        {statusCopy[bounty.status].description}
+        <strong>{statusCopy[bounty.status].label}:</strong> {statusCopy[bounty.status].description}
       </p>
 
       {bounty.submissionUrl && (
-        <a
-          className="submission-link"
-          href={bounty.submissionUrl}
-          target="_blank"
-          rel="noreferrer"
-        >
+        <a className="submission-link" href={bounty.submissionUrl} target="_blank" rel="noreferrer">
           Review submission <ArrowUpRight size={16} />
         </a>
       )}
 
       <div className="action-row">
-        {(actionCopy[bounty.status] ?? []).map((action) =>
-          renderActionButton(bounty, action),
-        )}
+        {(actionCopy[bounty.status] ?? []).map((action) => renderActionButton(bounty, action))}
       </div>
     </article>
   );
@@ -315,39 +306,22 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [showShortcutsOverlay, setShowShortcutsOverlay] = useState(false);
 
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-  useEffect(() => {
-    function goOnline() {
-      setIsOffline(false);
-    }
-    function goOffline() {
-      setIsOffline(true);
-    }
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
-    return () => {
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
-    };
-  }, []);
-
   const [searchQuery, setSearchQuery] = useState(initialFilters.searchQuery);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(initialFilters.searchQuery);
+
+  // Debounced search update
+  const debouncedSetSearchQuery = useMemo(() => debounce(setDebouncedSearchQuery, 300), []);
 
   useEffect(() => {
     debouncedSetSearchQuery(searchQuery);
   }, [searchQuery, debouncedSetSearchQuery]);
-  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(
-    initialFilters.statusFilter,
-  );
+  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(initialFilters.statusFilter);
   const [minReward, setMinReward] = useState(initialFilters.minReward);
   const [maxReward, setMaxReward] = useState(initialFilters.maxReward);
   const [repoFilter, setRepoFilter] = useState(initialFilters.repoFilter);
   const [tokenFilter, setTokenFilter] = useState(initialFilters.tokenFilter);
   const [sortOption, setSortOption] = useState(initialFilters.sortOption);
-  const [sortDirection, setSortDirection] = useState(
-    initialFilters.sortDirection,
-  );
+  const [sortDirection, setSortDirection] = useState(initialFilters.sortDirection);
   const [pathname, setPathname] = useState(window.location.pathname);
   const detailId = useMemo(() => {
     const match = pathname.match(/^\/bounties\/([^/]+)$/);
@@ -357,16 +331,59 @@ function App() {
   const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [profileContributor, setProfileContributor] = useState("");
-  const [profileStatus, setProfileStatus] = useState<"all" | BountyStatus>(
-    "all",
-  );
+  const [profileStatus, setProfileStatus] = useState<"all" | BountyStatus>("all");
+
+  const [connectedWallet, setConnectedWallet] = useState<string>(() => {
+    try {
+      return localStorage.getItem("stellar-bounty-board-wallet") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [maintainerMetrics, setMaintainerMetrics] = useState<MaintainerMetrics | null>(null);
+  const [maintainerMetricsLoading, setMaintainerMetricsLoading] = useState(false);
+
+  const maintainerAddress = useMemo(() => {
+    const match = pathname.match(/^\/maintainer\/([^/]+)$/);
+    return match ? decodeURIComponent(match[1] ?? "") : null;
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!maintainerAddress) {
+      setMaintainerMetrics(null);
+      return;
+    }
+    let active = true;
+    setMaintainerMetricsLoading(true);
+    getMaintainerMetrics(maintainerAddress)
+      .then((data) => {
+        if (active) {
+          setMaintainerMetrics(data);
+          setMaintainerMetricsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setMaintainerMetrics(null);
+          setMaintainerMetricsLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [maintainerAddress]);
 
   // Submission checklist modal state
-
+  const [submissionModalBounty, setSubmissionModalBounty] = useState<Bounty | null>(null);
+  const [submissionModalSubmitting, setSubmissionModalSubmitting] = useState(false);
+  const [submissionModalError, setSubmissionModalError] = useState<string | null>(null);
+  const [submissionModalData, setSubmissionModalData] = useState<Partial<SubmissionFormData> | undefined>(undefined);
+  const submissionReturnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     detailIdRef.current = detailId;
   }, [detailId]);
+
 
   async function refresh(signal?: AbortSignal): Promise<void> {
     const [bountyData, issueData] = await Promise.all([
@@ -378,9 +395,7 @@ function App() {
 
     const currentDetailId = detailIdRef.current;
     if (currentDetailId) {
-      const refreshedDetailBounty = bountyData.find(
-        (bounty) => bounty.id === currentDetailId,
-      );
+      const refreshedDetailBounty = bountyData.find((bounty) => bounty.id === currentDetailId);
       if (refreshedDetailBounty) {
         setDetailBounty(refreshedDetailBounty);
       }
@@ -396,9 +411,7 @@ function App() {
         await refresh(signal);
       } catch (err) {
         if (signal.aborted) return; // component unmounted — ignore
-        setError(
-          err instanceof Error ? err.message : "Failed to load project data.",
-        );
+        setError(err instanceof Error ? err.message : "Failed to load project data.");
       } finally {
         if (!signal.aborted) {
           setLoading(false);
@@ -424,8 +437,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (pathname.startsWith("/bounties/") || pathname.startsWith("/repo/"))
-      return;
+    if (pathname.startsWith("/bounties/") || pathname.startsWith("/repo/") || pathname.startsWith("/maintainer/")) return;
     const params = new URLSearchParams();
 
     if (debouncedSearchQuery.trim() !== "") {
@@ -463,18 +475,14 @@ function App() {
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-
+  }, [maxReward, minReward, pathname, debouncedSearchQuery, statusFilter, repoFilter, tokenFilter, sortOption, sortDirection]);
 
   useEffect(() => {
     function handlePopState() {
       const nextPathname = window.location.pathname;
       setPathname(nextPathname);
 
-      if (
-        nextPathname.startsWith("/bounties/") ||
-        nextPathname.startsWith("/repo/")
-      )
-        return;
+      if (nextPathname.startsWith("/bounties/") || nextPathname.startsWith("/repo/") || nextPathname.startsWith("/maintainer/")) return;
       const filters = readInitialFilters();
       setSearchQuery(filters.searchQuery);
       setStatusFilter(filters.statusFilter);
@@ -553,15 +561,9 @@ function App() {
     );
     return {
       liveBounties: activePool.length,
-      fundedVolume: bounties.reduce(
-        (sum: number, bounty: Bounty) => sum + bounty.amount,
-        0,
-      ),
-      openIssues: bounties.filter((bounty: Bounty) => bounty.status === "open")
-        .length,
-      shippedRewards: bounties.filter(
-        (bounty: Bounty) => bounty.status === "released",
-      ).length,
+      fundedVolume: bounties.reduce((sum: number, bounty: Bounty) => sum + bounty.amount, 0),
+      openIssues: bounties.filter((bounty: Bounty) => bounty.status === "open").length,
+      shippedRewards: bounties.filter((bounty: Bounty) => bounty.status === "released").length,
     };
   }, [bounties]);
 
@@ -606,13 +608,14 @@ function App() {
     try {
       await exportReleasedPayoutsCsv();
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to export payouts.",
-      );
+      setError(err instanceof Error ? err.message : "Failed to export payouts.");
     } finally {
       setExporting(false);
     }
   }
+
+
+
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -673,9 +676,7 @@ function App() {
       <button
         key={action.action}
         type="button"
-        className={
-          action.action === "refund" ? "ghost-button" : "secondary-button"
-        }
+        className={action.action === "refund" ? "ghost-button" : "secondary-button"}
         title={action.title}
         onClick={onClick}
       >
@@ -686,17 +687,7 @@ function App() {
 
   const repoRoute = useMemo(() => {
     const match = pathname.match(/^\/repo\/([^/]+)\/([^/]+)$/);
-    return match
-      ? {
-          owner: decodeURIComponent(match[1]),
-          name: decodeURIComponent(match[2]),
-        }
-      : null;
-  }, [pathname]);
-
-  const contributorRoute = useMemo(() => {
-    const match = pathname.match(/^\/contributor\/([^/]+)$/);
-    return match ? { address: decodeURIComponent(match[1]) } : null;
+    return match ? { owner: decodeURIComponent(match[1]), name: decodeURIComponent(match[2]) } : null;
   }, [pathname]);
 
   // Fetch single bounty via dedicated API endpoint instead of filtering the full list
@@ -726,9 +717,7 @@ function App() {
   }, [detailId]);
 
   const filteredBounties = useMemo(() => {
-    const effectiveRepoFilter = repoRoute
-      ? `${repoRoute.owner}/${repoRoute.name}`
-      : repoFilter;
+    const effectiveRepoFilter = repoRoute ? `${repoRoute.owner}/${repoRoute.name}` : repoFilter;
     const filtered = filterBounties(bounties, {
       searchQuery: debouncedSearchQuery,
       statusFilter,
@@ -741,11 +730,12 @@ function App() {
     });
 
     // Apply sorting
-
+    return sortBounties(filtered, { option: sortOption, direction: sortDirection });
+  }, [bounties, debouncedSearchQuery, statusFilter, minReward, maxReward, repoFilter, tokenFilter, repoRoute, sortOption, sortDirection]);
 
   const groupedBounties = useMemo(() => {
     if (repoRoute) {
-      return { [repoRoute.owner + "/" + repoRoute.name]: filteredBounties };
+      return { [repoRoute.owner + '/' + repoRoute.name]: filteredBounties };
     }
     const groups: Record<string, typeof filteredBounties> = {};
     filteredBounties.forEach((bounty) => {
@@ -826,38 +816,67 @@ function App() {
     const avatarUrl = bounty ? `https://github.com/${owner}.png?size=72` : "";
 
     return (
-      <ErrorBoundary componentName="BountyDetailPage">
-        <Suspense fallback={<div className="empty-state">Loading bounty...</div>}>
-          <BountyDetailPage
-            bounty={bounty}
-            loading={detailLoading}
-            onBack={() => navigate("/")}
-            owner={owner}
-            avatarUrl={avatarUrl}
-            statusCopy={statusCopy}
-            actionCopy={actionCopy}
-            renderActionButton={renderActionButton}
-            formatTimestamp={formatTimestamp}
-          />
-        </Suspense>
-      </ErrorBoundary>
+      <Suspense fallback={<div className="empty-state">Loading bounty...</div>}>
+        <BountyDetailPage
+          bounty={bounty}
+          loading={detailLoading}
+          onBack={() => navigate("/")}
+          owner={owner}
+          avatarUrl={avatarUrl}
+          statusCopy={statusCopy}
+          actionCopy={actionCopy}
+          renderActionButton={renderActionButton}
+          formatTimestamp={formatTimestamp}
+        />
+      </Suspense>
     );
   }
 
-  if (contributorRoute) {
+  if (maintainerAddress) {
     return (
-      <ContributorProfilePage
-        address={contributorRoute.address}
-        onBack={() => navigate("/")}
-      />
+      <div className="page-shell">
+        <div className="glow glow-left" />
+        <div className="glow glow-right" />
+        
+        <nav className="header-nav" aria-label="Main Navigation">
+          <div className="nav-logo" onClick={() => navigate("/")} role="link" tabIndex={0}>
+            <Rocket size={18} />
+            <span>Stellar Bounty Board</span>
+          </div>
+          <div className="nav-links">
+            {connectedWallet && (
+              <button 
+                className="nav-link-btn" 
+                onClick={() => navigate(`/maintainer/${connectedWallet}`)}
+              >
+                Analytics Dashboard
+              </button>
+            )}
+            <button 
+              className="connect-wallet-btn"
+              onClick={handleConnectWallet}
+            >
+              {connectedWallet ? shortAddress(connectedWallet) : "Connect Wallet"}
+            </button>
+          </div>
+        </nav>
+
+        {maintainerMetricsLoading || !maintainerMetrics ? (
+          <div className="empty-state">Loading metrics...</div>
+        ) : (
+          <MaintainerAnalyticsPage
+            metrics={maintainerMetrics}
+            maintainerAddress={maintainerAddress}
+            bounties={bounties}
+            onBack={() => navigate("/")}
+          />
+        )}
+      </div>
     );
   }
 
   async function handleReserve(bounty: Bounty) {
-    const contributor = window.prompt(
-      "Contributor Stellar address",
-      bounty.contributor ?? "",
-    );
+    const contributor = window.prompt("Contributor Stellar address", bounty.contributor ?? "");
     if (!contributor) return;
     const contributorError = validateStellarPublicKey(contributor);
     if (contributorError) {
@@ -870,7 +889,9 @@ function App() {
       await refresh();
       toast.success('Bounty reserved successfully!');
     } catch (err) {
-
+      const message = err instanceof Error ? err.message : 'Failed to reserve bounty.';
+      setError(message);
+      toast.error(message);
     }
   }
   async function handleSubmit(bounty: Bounty) {
@@ -911,35 +932,31 @@ function App() {
       await refresh();
       toast.success('PR submitted successfully!');
     } catch (err) {
-
+      const message = err instanceof Error ? err.message : 'Failed to submit bounty.';
+      setSubmissionModalError(message);
+      toast.error(message);
     } finally {
       setSubmissionModalSubmitting(false);
     }
   }
   async function handleRelease(bounty: Bounty) {
-    const maintainer = window.prompt(
-      "Maintainer Stellar address",
-      bounty.maintainer,
-    );
+    const maintainer = window.prompt("Maintainer Stellar address", bounty.maintainer);
     if (!maintainer) return;
     const maintainerError = validateStellarPublicKey(maintainer);
     if (maintainerError) {
       window.alert(maintainerError);
       return;
     }
-    const transactionHash =
-      window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
+    const transactionHash = window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
     try {
       setError(null);
-      await releaseBounty(
-        bounty.id,
-        maintainer.trim(),
-        transactionHash || undefined,
-      );
+      await releaseBounty(bounty.id, maintainer.trim(), transactionHash || undefined);
       await refresh();
       toast.success('Bounty released — payment sent!');
     } catch (err) {
-
+      const message = err instanceof Error ? err.message : 'Failed to release bounty.';
+      setError(message);
+      toast.error(message);
     }
   }
     async function handleRefund(bounty: Bounty) {
@@ -963,7 +980,187 @@ function App() {
       }
   }                      
 
+  function handleConnectWallet() {
+    if (connectedWallet) {
+      if (window.confirm("Do you want to disconnect your wallet?")) {
+        setConnectedWallet("");
+        try {
+          localStorage.removeItem("stellar-bounty-board-wallet");
+        } catch {
+          // ignore
+        }
+        toast.success("Wallet disconnected");
+      }
+      return;
+    }
+    const address = window.prompt("Enter Stellar public key to connect wallet:", "GB5IWBA6RTXMZSCMHFSVNL6IIZMHH5WJOH7JXZ2UTZD3VP2WBVWJJOOK");
+    if (!address) return;
+    const err = validateStellarPublicKey(address);
+    if (err) {
+      window.alert(err);
+      return;
+    }
+    setConnectedWallet(address.trim());
+    try {
+      localStorage.setItem("stellar-bounty-board-wallet", address.trim());
+    } catch {
+      // ignore
+    }
+    toast.success("Wallet connected successfully!");
+  }
 
+  return (               
+    <div className="page-shell">
+          <div className="glow glow-left" />
+          <div className="glow glow-right" />
+
+          <nav className="header-nav" aria-label="Main Navigation">
+            <div className="nav-logo" onClick={() => navigate("/")} role="link" tabIndex={0}>
+              <Rocket size={18} />
+              <span>Stellar Bounty Board</span>
+            </div>
+            <div className="nav-links">
+              {connectedWallet && (
+                <button 
+                  className="nav-link-btn" 
+                  onClick={() => navigate(`/maintainer/${connectedWallet}`)}
+                >
+                  Analytics Dashboard
+                </button>
+              )}
+              <button 
+                className="connect-wallet-btn"
+                onClick={handleConnectWallet}
+              >
+                {connectedWallet ? shortAddress(connectedWallet) : "Connect Wallet"}
+              </button>
+            </div>
+          </nav>
+
+          <header className="hero">
+            <div className="hero-copy">
+              <span className="eyebrow">Stellar + Open Source</span>
+              <h1>Fund GitHub issues with on-chain style escrow.</h1>
+              <p>
+                Stellar Bounty Board turns backlog items into funded contribution lanes.
+                Maintainers lock a reward, contributors reserve the work, and payout flows
+                through a simple review lifecycle.
+              </p>
+              <div className="hero-actions">
+                <a href="#create" className="primary-link">
+                  Launch a bounty
+                </a>
+                <a href="#issues" className="secondary-link">
+                  Contribution backlog
+                </a>
+                <button
+                  type="button"
+                  className="secondary-link"
+                  disabled={exporting}
+                  onClick={() => void handleExportReleasedPayouts()}
+                >
+                  {exporting ? "Exporting..." : "Export released payouts (CSV)"}
+                </button>
+                <button
+                  type="button"
+                  className="secondary-link"
+                  onClick={toggleDark}
+                  aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+                  title={dark ? "Switch to light mode" : "Switch to dark mode"}
+                >
+                  {dark ? <Sun size={16} /> : <Moon size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <section className="hero-panel">
+              <div className="hero-panel__row">
+                <ShieldCheck size={18} />
+                <span>Escrow-first maintainer controls</span>
+              </div>
+              <div className="hero-panel__row">
+                <FolderGit2 size={18} />
+                <span>GitHub issue and PR-linked lifecycle</span>
+              </div>
+              <div className="hero-panel__row">
+                <Coins size={18} />
+                <span>Built to graduate from demo backend to Soroban source of truth</span>
+              </div>
+            </section>
+          </header>
+
+          {repoRoute && (
+            <section className="hero-panel">
+              <div className="hero-panel__row">
+                <GitBranch size={18} />
+                <span>
+                  <strong>{repoRoute.owner}/{repoRoute.name}</strong> repository
+                </span>
+              </div>
+              <div className="hero-panel__row">
+                <ExternalLink size={18} />
+                <span>
+                  <a
+                    href={`https://github.com/${repoRoute.owner}/${repoRoute.name}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-link"
+                  >
+                    View on GitHub
+                  </a>
+                </span>
+              </div>
+              <div className="hero-panel__row">
+                <ArrowUpRight size={18} />
+                <span>
+                  <button
+                    className="ghost-button"
+                    onClick={() => navigate("/")}
+                  >
+                    View all repositories
+                  </button>
+                </span>
+              </div>
+            </section>
+          )}
+
+          <section className="metrics">
+            <article className="metric-card">
+              <span>Live bounties</span>
+              <strong>{metrics.liveBounties}</strong>
+            </article>
+            <article className="metric-card">
+              <span>Funded volume</span>
+              <strong>{metrics.fundedVolume} XLM</strong>
+            </article>
+            <article className="metric-card">
+              <span>Open to claim</span>
+              <strong>{metrics.openIssues}</strong>
+            </article>
+            <article className="metric-card">
+              <span>Released payouts</span>
+              <strong>{metrics.shippedRewards}</strong>
+            </article>
+          </section>
+
+          {error && <div className="error-banner">{error}</div>}
+
+          {profileContributor && (
+            <RecommendedBounties
+              recommendations={recommendations}
+              loading={loading}
+            />
+          )}
+
+          <main className="content-grid">
+            <section className="panel form-panel" id="create">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-kicker">Maintainer flow</span>
+                  <h2>Create a bounty</h2>
+                </div>
+                <Rocket size={18} />
+              </div>
 
               <form className="bounty-form" onSubmit={handleCreate}>
                 <label>
@@ -998,7 +1195,49 @@ function App() {
                   </label>
                 </div>
 
+                <label>
+                  Issue title
+                  <input
+                    value={form.title}
+                    onChange={(event) => setForm({ ...form, title: event.target.value })}
+                    placeholder="Example: Add WebSocket payout updates"
+                  />
+                </label>
 
+                <label>
+                  Summary
+                  <textarea
+                    value={form.summary}
+                    onChange={(event) => setForm({ ...form, summary: event.target.value })}
+                    placeholder="What should a contributor build?"
+                    rows={4}
+                  />
+                </label>
+
+                <div className="two-up">
+                  <label>
+                    Maintainer address
+                    <input
+                      value={form.maintainer}
+                      onChange={(event) => setForm({ ...form, maintainer: event.target.value })}
+                      placeholder="G... (56 chars)"
+                      inputMode="text"
+                      autoComplete="off"
+                      aria-invalid={Boolean(form.maintainer.trim() && validateStellarPublicKey(form.maintainer))}
+                    />
+                    <small className="field-hint">Enter a Stellar public key (starts with 'G', 56 characters)</small>
+                    {form.maintainer.trim() && validateStellarPublicKey(form.maintainer) && (
+                      <small className="field-error">{validateStellarPublicKey(form.maintainer)}</small>
+                    )}
+                  </label>
+
+                  <label>
+                    Token
+                    <input
+                      value={form.tokenSymbol}
+                      onChange={(event) => setForm({ ...form, tokenSymbol: event.target.value })}
+                    />
+                  </label>
                 </div>
 
                 <div className="two-up">
@@ -1033,10 +1272,167 @@ function App() {
                   </label>
                 </div>
 
-<
+                <GitHubIssuePreviewCard
+                  repo={form.repo}
+                  issueNumber={form.issueNumber}
+                  title={form.title}
+                  labels={form.labels}
+                />
+
+                <button className="primary-button" disabled={submitting}>
+                  {submitting ? "Publishing..." : "Publish bounty"}
+                </button>
+              </form>
+            </section>
+
+            <section className="panel board-panel">
+              <div className="panel-header">
+                <div>
+                  <span className="panel-kicker">Contributor flow</span>
+                  <h2>Bounty board</h2>
+                </div>
+                <HandCoins size={18} />
+              </div>
+
+              <div className="board-filters">
+                <div className="board-filters__header">
+                  <div>
+                    <span className="panel-kicker">Board filters</span>
+                    <p>
+                      Showing <strong>{filteredBounties.length}</strong> of <strong>{bounties.length}</strong>{" "}
+                      bounties
+                    </p>
+                  </div>
+                  <button className="ghost-button filter-reset" type="button" onClick={clearFilters}>
+                    Clear filters
+                  </button>
                 </div>
 
+                <div className="filter-grid">
+                  <label className="filter-field filter-field--search">
+                    <span>Search</span>
+                    <div className="input-with-icon">
+                      <Search size={16} />
+                      <input
+                        ref={searchInputRef}
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search repo, title, labels, status"
+                        aria-keyshortcuts="/"
+                      />
+                    </div>
+                  </label>
 
+                  <label className="filter-field">
+                    <span>Status</span>
+                    <div className="input-with-icon">
+                      <SlidersHorizontal size={16} />
+                      <select
+                        value={statusFilter}
+                        onChange={(event) => setStatusFilter(event.target.value as "all" | BountyStatus)}
+                      >
+                        {statusOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Repository</span>
+                    <div className="input-with-icon">
+                      <GitBranch size={16} />
+                      <select
+                        value={repoFilter}
+                        onChange={(event) => setRepoFilter(event.target.value)}
+                      >
+                        <option value="">All repositories</option>
+                        {uniqueRepos.map((repo) => (
+                          <option key={repo} value={repo}>
+                            {repo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Token</span>
+                    <div className="input-with-icon">
+                      <Coins size={16} />
+                      <select
+                        aria-label="Filter by token"
+                        value={tokenFilter}
+                        onChange={(event) => setTokenFilter(event.target.value)}
+                      >
+                        <option value="">All Tokens</option>
+                        {uniqueTokens.map((token) => (
+                          <option key={token} value={token}>
+                            {token}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Min reward</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      value={minReward}
+                      onChange={(event) => setMinReward(event.target.value)}
+                      placeholder={rewardBounds.lowest > 0 ? `${rewardBounds.lowest}` : "0"}
+                    />
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Max reward</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      inputMode="numeric"
+                      value={maxReward}
+                      onChange={(event) => setMaxReward(event.target.value)}
+                      placeholder={rewardBounds.highest > 0 ? `${rewardBounds.highest}` : "No limit"}
+                    />
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Sort by</span>
+                    <div className="input-with-icon">
+                      <ArrowUpDown size={16} />
+                      <select
+                        value={sortOption}
+                        onChange={(event) => {
+                          const newOption = event.target.value as SortOption;
+                          setSortOption(newOption);
+                          // Set default direction for this sort option
+                          const optionConfig = sortOptions.find(opt => opt.value === newOption);
+                          if (optionConfig) {
+                            setSortDirection(optionConfig.direction);
+                          }
+                        }}
+                      >
+                        {sortOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="active-range" aria-live="polite">
+                  <span className="active-range__label">Active reward range</span>
+                  <strong>{activeRewardLabel}</strong>
+                </div>
               </div>
 
               <section className="status-glossary" aria-labelledby="status-glossary-title">
@@ -1057,12 +1453,119 @@ function App() {
                 </div>
               </section>
 
+              {loading ? (
+                <div className="board-list">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <SkeletonBountyCard key={i} />
+                  ))}
+                </div>
+              ) : Object.keys(groupedBounties).length > 0 ? (
+                <div className="board-list">
+                  {Object.entries(groupedBounties).map(([repo, repoBounties]) => (
+                    <div key={repo} className="repo-group">
+                      <div className="repo-group__header">
+                        <h3>
+                          <button
+                            type="button"
+                            className="repo-group__title"
+                            onClick={() => navigate(`/repo/${repo.split('/')[0]}/${repo.split('/')[1]}`)}
+                          >
+                            {repo}
+                          </button>
+                        </h3>
+                        <span className="repo-count">{repoBounties.length} bounties</span>
+                      </div>
+                      <div className="repo-group__metrics">
+                        <div className="repo-metric">
+                          <span className="repo-metric__label">Open</span>
+                          <span className="repo-metric__value">{repoBounties.filter(b => b.status === 'open').length}</span>
+                        </div>
+                        <div className="repo-metric">
+                          <span className="repo-metric__label">Funded</span>
+                          <span className="repo-metric__value">{repoBounties.reduce((sum, b) => sum + b.amount, 0)} XLM</span>
+                        </div>
+                        <div className="repo-metric">
+                          <span className="repo-metric__label">Paid</span>
+                          <span className="repo-metric__value">{repoBounties.filter(b => b.status === 'released').reduce((sum, b) => sum + b.amount, 0)} XLM</span>
+                        </div>
+                      </div>
+                      <div className="repo-group__bounties">
+                        {repoBounties.map((bounty) => (
+                          <BountyCard
+                            key={bounty.id}
+                            bounty={bounty}
+                            onOpen={handleOpenBounty}
+                            renderActionButton={renderActionButton}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  heading={emptyStateHeading}
+                  message={emptyStateMessage}
+                  hasFilters={hasActiveFilters}
+                  onClearFilters={clearFilters}
+                />
+              )}
+            </section>
+          </main>
 
+          <section className="panel issues-panel" id="issues">
+            <div className="panel-header">
+              <div>
+                <span className="panel-kicker">Open source angle</span>
+                <h2>Issue drafts to open next</h2>
+              </div>
+              <FolderGit2 size={18} />
+            </div>
+
+            <div className="issue-list">
+              {issues.map((issue) => (
+                <article className="issue-card" key={issue.id}>
+                  <div className="issue-card__top">
+                    <strong>{issue.id}</strong>
+                    <span className={`impact-chip impact-chip--${issue.impact}`}>{issue.impact}</span>
+                  </div>
+                  <h3>{issue.title}</h3>
+                  <p>{issue.summary}</p>
+                  <div className="chip-row">
+                    {issue.labels.map((label) => (
+                      <span className="chip" key={label.name}>
+                        {label.name}
+                      </span>
+                    ))}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel profile-panel" id="profile">
+            <div className="panel-header">
+              <div>
+                <span className="panel-kicker">Contributor angle</span>
+                <h2>Contributor profile</h2>
               </div>
               <UserRound size={18} />
             </div>
 
-
+            <div className="profile-controls">
+              <label>
+                Contributor address
+                <input
+                  value={profileContributor}
+                  onChange={(event) => setProfileContributor(event.target.value)}
+                  placeholder="G... (Stellar address)"
+                  inputMode="text"
+                  autoComplete="off"
+                  aria-invalid={Boolean(profileContributor.trim() && validateStellarPublicKey(profileContributor))}
+                />
+                <small className="field-hint">Enter a Stellar public key (starts with 'G', 56 characters)</small>
+                {profileContributor.trim() && validateStellarPublicKey(profileContributor) && (
+                  <small className="field-error">{validateStellarPublicKey(profileContributor)}</small>
                 )}
               </label>
 
@@ -1083,7 +1586,28 @@ function App() {
               </div>
             </div>
 
-
+            {loading ? (
+              <div className="empty-state">Loading contributor history...</div>
+            ) : !contributorMetrics.contributor ? (
+              <div className="empty-state">
+                Enter a contributor address to see reserved, submitted, and released bounties plus total
+                earnings.
+              </div>
+            ) : contributorMetrics.filtered.length === 0 ? (
+              <div className="empty-state">
+                No bounties found for <strong>{shortAddress(contributorMetrics.contributor)}</strong>
+                {profileStatus === "all" ? "." : ` in "${profileStatus}" status.`}
+              </div>
+            ) : (
+              <div className="profile-grid">
+                <div className="profile-metrics">
+                  <div className="profile-metric">
+                    <span className="meta-label">Reserved</span>
+                    <strong>{contributorMetrics.countsByStatus.get("reserved") ?? 0}</strong>
+                  </div>
+                  <div className="profile-metric">
+                    <span className="meta-label">Submitted</span>
+                    <strong>{contributorMetrics.countsByStatus.get("submitted") ?? 0}</strong>
                   </div>
                   <div className="profile-metric">
                     <span className="meta-label">Released</span>
@@ -1099,7 +1623,18 @@ function App() {
                   </div>
                 </div>
 
-
+                <div className="profile-earnings">
+                  <span className="meta-label">Total earnings (released)</span>
+                  <div className="earnings-row">
+                    {Array.from(contributorMetrics.releasedTotalsByAsset.entries()).length === 0 ? (
+                      <strong>0</strong>
+                    ) : (
+                      Array.from(contributorMetrics.releasedTotalsByAsset.entries()).map(([asset, total]) => (
+                        <div className="earnings-chip" key={asset}>
+                          <strong>{total}</strong>
+                          <span>{asset}</span>
+                        </div>
+                      ))
                     )}
                   </div>
                 </div>

@@ -42,6 +42,7 @@ const baseBounty: Bounty = {
   deadlineAt: 9999999999,
   version: 1,
   events: [],
+  status: 'open',
 };
 
 beforeEach(() => {
