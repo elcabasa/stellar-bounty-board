@@ -175,6 +175,13 @@ The Soroban contract uses a named error enum (`Error`) for recoverable failures:
 
 These errors are invoked via `panic_with_error!` and surface as `Error(Contract, #N)` in test expectations.
 
+## FAQ
+
+For common issues, troubleshooting steps, wallet setup, testnet funding, transaction errors, and bounty workflow explanations, see:
+
+* [FAQ Guide](./docs/FAQ.md)
+
+
 ## Contribution Hooks
 
 Contribution-ready issue drafts live in `docs/issues`.
