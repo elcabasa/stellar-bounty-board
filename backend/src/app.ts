@@ -10,6 +10,7 @@ import { getMetrics, httpRequestDuration } from './metrics';
 import {
   createBounty,
   listBountyAuditLogs,
+  listAllAuditLogs,
   listBounties,
   listBountiesCached,
   invalidateBountyCache,
@@ -21,8 +22,9 @@ import {
   getMaintainerMetrics,
   getGlobalMetrics,
   getLeaderboard,
+  listBountiesCached,
 } from './services/bountyStore';
-import { listOpenIssues, getOpenIssuesStatus } from './services/openIssues';
+
 import {
   bountyIdSchema,
   createBountySchema,
@@ -30,9 +32,7 @@ import {
   reserveBountySchema,
   submitBountySchema,
   zodErrorMessage,
-} from './validation/schemas';
-import { logStructured } from './logger';
-import { readLimiter, mutationLimiter } from './utils';
+
 import {
   captureRawBody,
   createGitHubWebhookSignatureMiddleware,
@@ -240,22 +240,17 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   res.type('application/xml').send(xml);
 });
 
-app.get('/api/health', (_req: Request, res: Response) => {
+const healthHandler = (_req: Request, res: Response) => {
   res.json({
     service: 'stellar-bounty-board-api',
     status: 'ok',
     timestamp: new Date().toISOString(),
-  });
-});
 
-app.get('/api/health/deep', (_req: Request, res: Response) => {
-  res.json({
-    service: 'stellar-bounty-board-api',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    openIssuesFeed: getOpenIssuesStatus(),
   });
-});
+};
+
+app.get('/api/health', healthHandler);
+app.get('/api/health/deep', healthHandler);
 
 app.get('/worker/health', (_req: Request, res: Response) => {
   res.json({
@@ -506,13 +501,7 @@ app.post(
 );
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
-  try {
-    const issues = await listOpenIssues();
-    res.setHeader('Cache-Control', 'max-age=600');
-    res.json({ data: issues });
-  } catch (error) {
-    sendError(res, _req, error);
-  }
+
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {
@@ -575,3 +564,25 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
     sendError(res, _req, error);
   }
 });
+
+/**
+ * GET /api/audit-log
+ *
+ * Admin-only endpoint that returns a paginated view of all audit log records
+ * across every bounty.  Requires a valid `x-admin-api-key` header whose value
+ * matches the bcrypt hash stored in `ADMIN_API_KEY_HASH`.
+ */
+app.get(
+  "/api/audit-log",
+  createAdminApiKeyAuthMiddleware(),
+  (req: Request, res: Response) => {
+    try {
+      const limit = parsePaginationValue(req.query.limit, "limit", 50, 1, 200);
+      const offset = parsePaginationValue(req.query.offset, "offset", 0, 0);
+      const page = listAllAuditLogs({ limit, offset });
+      res.json(page);
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  },
+);

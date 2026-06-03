@@ -1,14 +1,4 @@
-import React, {
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-  useRef,
-  memo,
-  Suspense,
-  type ReactNode,
-  type FormEvent,
-} from "react";
+
 import {
   FolderGit2,
   Moon,
@@ -26,33 +16,15 @@ import {
   releaseBounty,
   reserveBounty,
   submitBounty,
+  getMaintainerMetrics,
 } from "./api";
-import {
-  statusCopy,
-  actionCopy,
-  readInitialFilters,
-} from "./constants";
-import {
-  debounce,
-  filterBounties,
-  xlmToUsd,
-} from "./utils";
-import {
-  type Bounty,
-  type BountyStatus,
-  type CreateBountyPayload,
-  type OpenIssue,
-  type SubmissionFormData,
-} from "./types";
+
 
 import SkeletonBountyCard from "./SkeletonBountyCard";
 import EmptyState from "./EmptyState";
 import { ShortcutsHelpOverlay } from "./ShortcutsHelpOverlay";
 import BountyCountdown from "./BountyCountdown";
-import BountyDetailPage from "./BountyDetailPage";
-import ContributorProfilePage from "./ContributorProfilePage";
-import ErrorBoundary from "./ErrorBoundary";
-import SubmissionChecklistModal from "./SubmissionChecklistModal";
+
 
 const DARK_MODE_KEY = "stellar-bounty-board-theme";
 
@@ -92,6 +64,7 @@ const initialForm: CreateBountyPayload = {
   labels: [{ name: "help wanted", color: "0075ca" }],
 };
 
+
 function shortAddress(value: string): string {
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
 }
@@ -99,10 +72,10 @@ function shortAddress(value: string): string {
 function validateStellarPublicKey(input: string): string | null {
   const value = input.trim();
   if (!value) return "Address is required.";
-  if (!/^G[A-Z0-9]{55}$/.test(value))
-    return "Enter a Stellar public key (starts with 'G', 56 characters)";
+  if (!/^G[A-Z0-9]{55}$/.test(value)) return "Enter a Stellar public key (starts with 'G', 56 characters)";
   return null;
 }
+
 
 const contributorStatuses: Array<BountyStatus | "all"> = [
   "all",
@@ -135,11 +108,7 @@ function formatTimestamp(value?: number): string {
   return new Date(value * 1000).toLocaleString();
 }
 
-const BountyAmount = memo(function BountyAmount({
-  bounty,
-}: {
-  bounty: Bounty;
-}) {
+const BountyAmount = memo(function BountyAmount({ bounty }: { bounty: Bounty }) {
   const [usdAmount, setUsdAmount] = useState<string | null>(null);
 
   useEffect(() => {
@@ -166,9 +135,7 @@ const BountyAmount = memo(function BountyAmount({
 
   return (
     <div className="amount-chip">
-      <strong>
-        {bounty.amount} {bounty.tokenSymbol}
-      </strong>
+      <strong>{bounty.amount} {bounty.tokenSymbol}</strong>
       {usdAmount && <span>{usdAmount}</span>}
     </div>
   );
@@ -179,20 +146,7 @@ type BountyCardProps = {
   onOpen: (id: string) => void;
   renderActionButton: (
     bounty: Bounty,
-    action: {
-      action: "reserve" | "submit" | "release" | "refund";
-      label: string;
-      title: string;
-    }
-  ) => ReactNode;
-};
 
-const BountyCard = memo(function BountyCard({
-  bounty,
-  onOpen,
-  renderActionButton,
-}: BountyCardProps) {
-  const openCard = () => onOpen(bounty.id);
 
   return (
     <article
@@ -258,11 +212,10 @@ const BountyCard = memo(function BountyCard({
 
       <div className="chip-row">
         {bounty.labels.map((label) => (
-          <span className="chip" key={label.name}>
-            {label.name}
-          </span>
+          <span className="chip" key={label.name}>{label.name}</span>
         ))}
       </div>
+
 
       <div className="action-row">
         {(actionCopy[bounty.status] ?? []).map((action) => renderActionButton(bounty, action))}
@@ -281,36 +234,12 @@ function App() {
   const [submitting, setSubmitting] = useState(false);
   const [showShortcutsOverlay, setShowShortcutsOverlay] = useState(false);
 
-  useEffect(() => {
-    function goOnline() {
-      // setIsOffline(false);
-    }
-    function goOffline() {
-      // setIsOffline(true);
-    }
-    window.addEventListener("online", goOnline);
-    window.addEventListener("offline", goOffline);
-    return () => {
-      window.removeEventListener("online", goOnline);
-      window.removeEventListener("offline", goOffline);
-    };
-  }, []);
 
-  const [searchQuery, setSearchQuery] = useState(initialFilters.searchQuery);
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(searchQuery);
-
-  const debouncedSetSearchQuery = useMemo(
-    () => debounce((value: string) => setDebouncedSearchQuery(value), 300),
-    []
-  );
 
   useEffect(() => {
     debouncedSetSearchQuery(searchQuery);
   }, [searchQuery, debouncedSetSearchQuery]);
 
-  const [statusFilter, setStatusFilter] = useState<"all" | BountyStatus>(
-    initialFilters.statusFilter
-  );
   const [minReward, setMinReward] = useState(initialFilters.minReward);
   const [maxReward, setMaxReward] = useState(initialFilters.maxReward);
   const [repoFilter, setRepoFilter] = useState(initialFilters.repoFilter);
@@ -327,22 +256,13 @@ function App() {
   const [detailBounty, setDetailBounty] = useState<Bounty | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [submissionModalBounty, setSubmissionModalBounty] = useState<Bounty | null>(null);
-  const [submissionModalData, setSubmissionModalData] = useState<SubmissionFormData | undefined>(
-    undefined
-  );
-  const [submissionModalSubmitting, setSubmissionModalSubmitting] = useState(false);
-  const [submissionModalError, setSubmissionModalError] = useState<string | null>(null);
-  const submissionReturnFocusRef = useRef<HTMLElement | null>(null);
-
-  const refresh = useCallback(async (signal?: AbortSignal) => {
     const [bountyData, issueData] = await Promise.all([
       listBounties(signal),
       listOpenIssues(signal),
     ]);
     setBounties(bountyData);
     setIssues(issueData);
-  }, []);
+
 
   useEffect(() => {
     const controller = new AbortController();
@@ -352,8 +272,7 @@ function App() {
       try {
         await refresh(signal);
       } catch (err) {
-        if (signal.aborted) return;
-        console.error("Failed to load project data:", err);
+
       } finally {
         if (!signal.aborted) {
           setLoading(false);
@@ -375,7 +294,7 @@ function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (pathname.startsWith("/bounties/") || pathname.startsWith("/repo/")) return;
+
 
     const params = new URLSearchParams();
     if (debouncedSearchQuery.trim() !== "") params.set("search", debouncedSearchQuery);
@@ -390,23 +309,7 @@ function App() {
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [
-    debouncedSearchQuery,
-    statusFilter,
-    minReward,
-    maxReward,
-    repoFilter,
-    tokenFilter,
-    sortOption,
-    sortDirection,
-    pathname,
-  ]);
 
-  useEffect(() => {
-    function handlePopState() {
-      setPathname(window.location.pathname);
-      if (window.location.pathname.startsWith("/bounties/") || window.location.pathname.startsWith("/repo/"))
-        return;
       const filters = readInitialFilters();
       setSearchQuery(filters.searchQuery);
       setStatusFilter(filters.statusFilter);
@@ -455,12 +358,7 @@ function App() {
     setPathname(nextPath);
   }, []);
 
-  const handleOpenBounty = useCallback(
-    (id: string) => {
-      navigate(`/bounties/${encodeURIComponent(id)}`);
-    },
-    [navigate]
-  );
+
 
   async function handleReserve(bounty: Bounty) {
     const contributor = window.prompt("Contributor Stellar address", bounty.contributor ?? "");
@@ -475,59 +373,13 @@ function App() {
       await refresh();
       toast.success("Bounty reserved successfully!");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to reserve bounty.");
-    }
-  }
 
-  async function handleSubmit(bounty: Bounty) {
-    submissionReturnFocusRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setSubmissionModalBounty(bounty);
-    setSubmissionModalError(null);
-    setSubmissionModalData(undefined);
-  }
-
-  function closeSubmissionModal() {
-    setSubmissionModalBounty(null);
-    setSubmissionModalError(null);
-    window.requestAnimationFrame(() => {
-      submissionReturnFocusRef.current?.focus();
-      submissionReturnFocusRef.current = null;
-    });
-  }
-
-  async function handleSubmissionConfirm(data: SubmissionFormData) {
-    if (!submissionModalBounty) return;
-    setSubmissionModalSubmitting(true);
-    setSubmissionModalError(null);
-    setSubmissionModalData(data);
-    try {
-      await submitBounty(
-        submissionModalBounty.id,
-        data.contributor,
-        data.prLink,
-        data.notes || undefined
-      );
-      closeSubmissionModal();
-      setSubmissionModalData(undefined);
-      await refresh();
-      toast.success("PR submitted successfully!");
-    } catch (err) {
-      setSubmissionModalError(err instanceof Error ? err.message : "Submission failed.");
     } finally {
       setSubmissionModalSubmitting(false);
     }
   }
 
-  async function handleRelease(bounty: Bounty) {
-    const maintainer = window.prompt("Maintainer Stellar address", bounty.maintainer);
-    if (!maintainer) return;
-    const maintainerError = validateStellarPublicKey(maintainer);
-    if (maintainerError) {
-      window.alert(maintainerError);
-      return;
-    }
-    const transactionHash = window.prompt("Transaction hash (64 hex chars, optional)") ?? undefined;
+
     try {
       await releaseBounty(bounty.id, maintainer.trim(), transactionHash || undefined);
       await refresh();
@@ -565,34 +417,7 @@ function App() {
         else if (action.action === "refund") void handleRefund(bounty);
       };
 
-      return (
-        <button
-          key={action.action}
-          type="button"
-          className={action.action === "refund" ? "ghost-button" : "secondary-button"}
-          title={action.title}
-          onClick={onClick}
-        >
-          {action.label}
-        </button>
-      );
-    },
-    [refresh]
-  );
 
-  const repoRoute = useMemo(() => {
-    const match = pathname.match(/^\/repo\/([^/]+)\/([^/]+)$/);
-    return match
-      ? {
-        owner: decodeURIComponent(match[1]),
-        name: decodeURIComponent(match[2]),
-      }
-      : null;
-  }, [pathname]);
-
-  const contributorRoute = useMemo(() => {
-    const match = pathname.match(/^\/contributor\/([^/]+)$/);
-    return match ? { address: decodeURIComponent(match[1]) } : null;
   }, [pathname]);
 
   useEffect(() => {
@@ -622,7 +447,7 @@ function App() {
 
   const filteredBounties = useMemo(() => {
     const effectiveRepoFilter = repoRoute ? `${repoRoute.owner}/${repoRoute.name}` : repoFilter;
-    return filterBounties(bounties, {
+
       searchQuery: debouncedSearchQuery,
       statusFilter,
       minReward,
@@ -632,22 +457,7 @@ function App() {
       sortOption,
       sortDirection,
     });
-  }, [
-    bounties,
-    debouncedSearchQuery,
-    statusFilter,
-    minReward,
-    maxReward,
-    repoFilter,
-    tokenFilter,
-    sortOption,
-    sortDirection,
-    repoRoute,
-  ]);
 
-  const groupedBounties = useMemo(() => {
-    if (repoRoute) {
-      return { [`${repoRoute.owner}/${repoRoute.name}`]: filteredBounties };
     }
     const groups: Record<string, Bounty[]> = {};
     filteredBounties.forEach((bounty) => {
@@ -680,28 +490,13 @@ function App() {
   if (detailId) {
     const owner = detailBounty ? repoOwner(detailBounty.repo) : "";
     return (
-      <ErrorBoundary componentName="BountyDetailPage">
-        <Suspense fallback={<div className="empty-state">Loading bounty...</div>}>
-          <BountyDetailPage
-            bounty={detailBounty}
-            loading={detailLoading}
-            onBack={() => navigate("/")}
-            owner={owner}
-            avatarUrl={detailBounty ? `https://github.com/${owner}.png?size=72` : ""}
-            statusCopy={statusCopy}
-            actionCopy={actionCopy}
-            renderActionButton={renderActionButton}
-            formatTimestamp={formatTimestamp}
-          />
-        </Suspense>
-      </ErrorBoundary>
+
     );
   }
 
-  if (contributorRoute) {
+  if (maintainerAddress) {
     return (
-      <ContributorProfilePage address={contributorRoute.address} onBack={() => navigate("/")} />
-    );
+
   }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
@@ -722,11 +517,12 @@ function App() {
       await refresh();
       toast.success("Bounty created successfully!");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create bounty.");
+
     } finally {
       setSubmitting(false);
     }
   }
+
 
   return (
     <div className="app-container">
@@ -772,7 +568,7 @@ function App() {
                     />
                   </label>
                 </div>
-                <div className="form-row">
+
                   <label>
                     Title
                     <input
@@ -802,24 +598,7 @@ function App() {
                     </select>
                   </label>
                 </div>
-                <button type="submit" disabled={submitting}>
-                  {submitting ? "Creating..." : "Create Bounty"}
-                </button>
-              </form>
-            </div>
-          </div>
-        </section>
 
-        <section className="board-section">
-          <div className="board-filters">
-            <div className="search-box">
-              <Search size={18} />
-              <input
-                ref={searchInputRef}
-                placeholder="Search by repo, title, or label..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
             </div>
             <div className="filter-chips">
               {contributorStatuses.map((status) => (
@@ -834,28 +613,7 @@ function App() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="board-grid">
-              {[1, 2, 3].map((i) => (
-                <SkeletonBountyCard key={i} />
-              ))}
-            </div>
-          ) : Object.keys(groupedBounties).length > 0 ? (
-            <div className="board-groups">
-              {Object.entries(groupedBounties).map(([repo, repoBounties]) => (
-                <div key={repo} className="repo-group">
-                  <h3 className="repo-heading">
-                    <FolderGit2 size={18} /> {repo}
-                  </h3>
-                  <div className="board-grid">
-                    {repoBounties.map((bounty) => (
-                      <BountyCard
-                        key={bounty.id}
-                        bounty={bounty}
-                        onOpen={handleOpenBounty}
-                        renderActionButton={renderActionButton}
-                      />
-                    ))}
+
                   </div>
                 </div>
               ))}

@@ -173,8 +173,6 @@ export function sortBounties(bounties: Bounty[], sort: SortState): Bounty[] {
 
     return sort.direction === 'asc' ? comparison : -comparison;
   });
-
-  return sorted;
 }
 
 export function getActiveRewardLabel(
