@@ -12,6 +12,8 @@ import {
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
+  listBountiesCached,
+  invalidateBountyCache,
   refundBounty,
   releaseBounty,
   reserveBounty,
@@ -22,7 +24,7 @@ import {
   getLeaderboard,
   listBountiesCached,
 } from './services/bountyStore';
-import { listOpenIssues, getOpenIssuesFeedStatus } from './services/openIssues';
+
 import {
   bountyIdSchema,
   createBountySchema,
@@ -240,10 +242,10 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
 
 const healthHandler = (_req: Request, res: Response) => {
   res.json({
-    service: 'stellar-bounty-board-backend',
+    service: 'stellar-bounty-board-api',
     status: 'ok',
     timestamp: new Date().toISOString(),
-    openIssuesFeed: getOpenIssuesFeedStatus(),
+
   });
 };
 
@@ -499,8 +501,7 @@ app.post(
 );
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
-  res.setHeader('Cache-Control', 'max-age=600');
-  res.json({ data: await listOpenIssues() });
+
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {

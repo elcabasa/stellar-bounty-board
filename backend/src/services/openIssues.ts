@@ -58,6 +58,10 @@ function mapIssueToOpenIssue(i: any): OpenIssue {
   };
 }
 
+export function getOpenIssuesStatus(): FeedStatus {
+  return lastStatus;
+}
+
 export async function listOpenIssues(): Promise<OpenIssue[]> {
   const existing = cache.get(cachedKey);
   if (existing) return existing;

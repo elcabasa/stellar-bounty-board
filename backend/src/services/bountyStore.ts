@@ -37,10 +37,23 @@ export type BountyStatus =
 export type AuditMetadataValue = string | number | boolean | null;
 
 /**
+ * Types of state transitions that can be recorded in the audit log.
+ */
+export type BountyTransitionType =
+  | "create"
+  | "reserve"
+  | "submit"
+  | "release"
+  | "refund"
+  | "expire";
+
+/**
  * Represents a historical event in the lifecycle of a bounty.
  */
 export interface BountyEvent {
-
+  /** The type of event (usually matches the resulting status or "created"). */
+  type: BountyStatus | "created";
+  /** Unix timestamp in seconds when the event occurred. */
   timestamp: number;
   /** Stellar public key of the actor who triggered the event. */
   actor?: string;
@@ -447,7 +460,7 @@ export interface ListBountiesOptions {
   q?: string;
 }
 
-
+export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] {
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
 
@@ -536,7 +549,10 @@ async function withGlobalLock<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
-
+export async function createBounty(
+  input: CreateBountyInput,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
     const records = listBounties();
     const createdAt = nowInSeconds();
     const bounty: BountyRecord = {
@@ -559,7 +575,7 @@ async function withGlobalLock<T>(fn: () => T | Promise<T>): Promise<T> {
 
     writeStore([bounty, ...records]);
     await invalidateBountyCache();
-    
+
     // Increment Prometheus counter for bounty creation
     bountiesCreatedTotal.inc();
 
@@ -586,7 +602,12 @@ async function withGlobalLock<T>(fn: () => T | Promise<T>): Promise<T> {
   });
 }
 
-
+export async function reserveBounty(
+  id: string,
+  contributor: string,
+  expectedVersion?: number,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
     const records = listBounties();
     const bounty = findBounty(records, id);
 
@@ -751,10 +772,10 @@ export async function releaseBounty(
       },
     ]);
     await invalidateBountyCache();
-    
+
     // Increment Prometheus counter for bounty release
     bountiesReleasedTotal.inc();
-    
+
     return persisted;
   });
 }

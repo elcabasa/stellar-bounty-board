@@ -31,19 +31,18 @@
     "amount": 10,
     "labels": [],
     "status": "open",
-    "createdAt": 1780469943,
-    "deadlineAt": 1783061943,
+
     "version": 1,
     "events": [
       {
         "type": "created",
-        "timestamp": 1780469943
+
       }
     ],
     "reservationTimeoutSeconds": 604800
   },
   {
-    "id": "BNT-0103",
+
     "repo": "owner/repo",
     "issueNumber": 123,
     "title": "Contract test bounty",
@@ -54,20 +53,7 @@
     "labels": [
       "help wanted"
     ],
-    "status": "open",
-    "createdAt": 1780469943,
-    "deadlineAt": 1781074743,
-    "version": 1,
-    "events": [
-      {
-        "type": "created",
-        "timestamp": 1780469943
-      }
-    ],
-    "reservationTimeoutSeconds": 604800
-  },
-  {
-    "id": "BNT-0102",
+
     "repo": "test/repo",
     "issueNumber": 9999,
     "title": "UNIQUE_XYZZY_TITLE",
@@ -77,19 +63,18 @@
     "amount": 10,
     "labels": [],
     "status": "open",
-    "createdAt": 1780469720,
-    "deadlineAt": 1783061720,
+
     "version": 1,
     "events": [
       {
         "type": "created",
-        "timestamp": 1780469720
+
       }
     ],
     "reservationTimeoutSeconds": 604800
   },
   {
-    "id": "BNT-0101",
+
     "repo": "owner/repo",
     "issueNumber": 123,
     "title": "Contract test bounty",
@@ -100,20 +85,7 @@
     "labels": [
       "help wanted"
     ],
-    "status": "open",
-    "createdAt": 1780469720,
-    "deadlineAt": 1781074520,
-    "version": 1,
-    "events": [
-      {
-        "type": "created",
-        "timestamp": 1780469720
-      }
-    ],
-    "reservationTimeoutSeconds": 604800
-  },
-  {
-    "id": "BNT-0100",
+
     "repo": "test/repo",
     "issueNumber": 9999,
     "title": "UNIQUE_XYZZY_TITLE",
@@ -123,19 +95,18 @@
     "amount": 10,
     "labels": [],
     "status": "open",
-    "createdAt": 1780469626,
-    "deadlineAt": 1783061626,
+
     "version": 1,
     "events": [
       {
         "type": "created",
-        "timestamp": 1780469626
+
       }
     ],
     "reservationTimeoutSeconds": 604800
   },
   {
-    "id": "BNT-0099",
+
     "repo": "owner/repo",
     "issueNumber": 123,
     "title": "Contract test bounty",
@@ -147,13 +118,12 @@
       "help wanted"
     ],
     "status": "open",
-    "createdAt": 1780469626,
-    "deadlineAt": 1781074426,
+
     "version": 1,
     "events": [
       {
         "type": "created",
-        "timestamp": 1780469626
+
       }
     ],
     "reservationTimeoutSeconds": 604800

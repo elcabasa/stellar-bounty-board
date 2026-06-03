@@ -134,9 +134,9 @@ export const submitBountySchema = z
       .string()
       .trim()
       .url()
-      .openapi({ 
+      .openapi({
         example: "https://github.com/owner/repo/pull/123",
-        description: "GitHub pull request URL for the submission." 
+        description: "GitHub pull request URL for the submission."
       }),
 
     notes: z
@@ -200,9 +200,7 @@ export const bountyRecordSchema = z
     refundedTxHash: z.string().optional().openapi({ example: "0".repeat(64) }),
     submissionUrl: z.string().optional().openapi({ example: "https://github.com/owner/repo/pull/99" }),
     notes: z.string().optional(),
-    version: z.number().openapi({ example: 1 }),
-    events: z.array(z.any()).openapi({ description: "Bounty lifecycle events history." }),
-    reservationTimeoutSeconds: z.number().optional().openapi({ example: 604800 }),
+
   })
   .openapi("BountyRecord");
 
