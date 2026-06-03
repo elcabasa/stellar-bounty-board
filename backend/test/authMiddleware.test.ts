@@ -147,7 +147,13 @@ describe("Stellar auth middleware — release/refund routes", () => {
       .send({ contributor: validMaintainerPublicKey, submissionUrl: "https://example.com/pr/1" })
       .expect(200);
 
-    const payload = { maintainer: validMaintainerPublicKey, transactionHash: "a".repeat(64) };
+    const payload = {
+      maintainer: validMaintainerPublicKey,
+      transactionHash: "a".repeat(64),
+      action: "release",
+      bountyId: id,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
     const signature = signPayload(signingKeypair, payload);
 
     const res = await request(app)
@@ -158,5 +164,72 @@ describe("Stellar auth middleware — release/refund routes", () => {
       .expect(200);
 
     expect(res.body.data.status).toBe("released");
+  });
+
+  it("rejects release when timestamp is too old (stale)", async () => {
+    const app = await getApp();
+    const id = await createSignedBounty(app);
+
+    await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: validMaintainerPublicKey }).expect(200);
+    await request(app)
+      .post(`/api/bounties/${id}/submit`)
+      .send({ contributor: validMaintainerPublicKey, submissionUrl: "https://example.com/pr/1" })
+      .expect(200);
+
+    const payload = {
+      maintainer: validMaintainerPublicKey,
+      transactionHash: "a".repeat(64),
+      action: "release",
+      bountyId: id,
+      timestamp: Math.floor(Date.now() / 1000) - 70, // 70 seconds old (stale)
+    };
+    const signature = signPayload(signingKeypair, payload);
+
+    const res = await request(app)
+      .post(`/api/bounties/${id}/release`)
+      .set("X-Stellar-Public-Key", validMaintainerPublicKey)
+      .set("X-Stellar-Signature", signature)
+      .send(payload)
+      .expect(401);
+
+    expect(res.body.error).toMatch(/timestamp.*expired/i);
+  });
+
+  it("rejects release when request is replayed (nonce deduplication)", async () => {
+    const app = await getApp();
+    const id = await createSignedBounty(app);
+
+    await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: validMaintainerPublicKey }).expect(200);
+    await request(app)
+      .post(`/api/bounties/${id}/submit`)
+      .send({ contributor: validMaintainerPublicKey, submissionUrl: "https://example.com/pr/1" })
+      .expect(200);
+
+    const payload = {
+      maintainer: validMaintainerPublicKey,
+      transactionHash: "a".repeat(64),
+      action: "release",
+      bountyId: id,
+      timestamp: Math.floor(Date.now() / 1000),
+    };
+    const signature = signPayload(signingKeypair, payload);
+
+    // First attempt succeeds
+    await request(app)
+      .post(`/api/bounties/${id}/release`)
+      .set("X-Stellar-Public-Key", validMaintainerPublicKey)
+      .set("X-Stellar-Signature", signature)
+      .send(payload)
+      .expect(200);
+
+    // Second attempt (replay) fails
+    const res = await request(app)
+      .post(`/api/bounties/${id}/release`)
+      .set("X-Stellar-Public-Key", validMaintainerPublicKey)
+      .set("X-Stellar-Signature", signature)
+      .send(payload)
+      .expect(401);
+
+    expect(res.body.error).toMatch(/replay.*detected/i);
   });
 });

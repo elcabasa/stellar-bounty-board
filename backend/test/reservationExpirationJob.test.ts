@@ -79,18 +79,6 @@ describe('expireStaleReservations', () => {
   it('does not expire a fresh reservation', async () => {
     const store = await loadStore();
 
-    const bounty = await store.createBounty({
-      repo: 'test/repo',
-      issueNumber: 1,
-      title: 'Fresh bounty',
-      summary: 'Summary long enough for validation purposes here.',
-      maintainer: MAINTAINER,
-      tokenSymbol: 'XLM',
-      amount: 50,
-      deadlineDays: 30,
-      labels: [],
-    });
-
     await store.reserveBounty(bounty.id, CONTRIBUTOR);
 
     const { expireStaleReservations } = await loadJob();
@@ -172,20 +160,6 @@ describe('expireStaleReservations', () => {
   it('does not touch submitted bounties', async () => {
     const store = await loadStore();
 
-    const bounty = await store.createBounty({
-      repo: 'test/repo',
-      issueNumber: 2,
-      title: 'Submitted bounty',
-      summary: 'Summary long enough for validation purposes here.',
-      maintainer: MAINTAINER,
-      tokenSymbol: 'XLM',
-      amount: 50,
-      deadlineDays: 30,
-      labels: [],
-    });
-
-    await store.reserveBounty(bounty.id, CONTRIBUTOR);
-    await store.submitBounty(bounty.id, CONTRIBUTOR, 'https://github.com/pr/1');
 
     const { expireStaleReservations } = await loadJob();
     const result = expireStaleReservations(0);
