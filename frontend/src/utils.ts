@@ -1,15 +1,13 @@
-import { Bounty, BountyStatus } from "./types";
-import { FilterState } from "./constants";
+import type { FilterState } from './constants';
+import type { Bounty, BountyStatus } from './types';
 
-
-// Simple debounce function for search
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  delay: number,
-): (...args: Parameters<T>) => void {
+export function debounce<TArgs extends unknown[]>(
+  func: (...args: TArgs) => void,
+  delay: number
+): (...args: TArgs) => void {
   let timeoutId: ReturnType<typeof setTimeout>;
-  return (...args: Parameters<T>) => {
+
+  return (...args: TArgs) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => func(...args), delay);
   };
@@ -20,14 +18,50 @@ export function getUniqueRepos(bounties: Bounty[]): string[] {
   return Array.from(repos).sort();
 }
 
+/** Distinct token symbols across the given bounties, sorted for a stable dropdown (#293). */
+export function getUniqueTokenSymbols(bounties: Bounty[]): string[] {
+  const tokens = new Set(
+    bounties
+      .map((bounty) => bounty.tokenSymbol?.trim().toUpperCase())
+      .filter((symbol): symbol is string => Boolean(symbol))
+  );
+
+  return Array.from(tokens).sort();
+}
+
+export function computeDeadlineAt(createdAt: number, deadlineDays: number): number {
+  return createdAt + deadlineDays * 24 * 60 * 60 * 1000;
+}
+
+export function deriveBountyStatus(
+  status: BountyStatus,
+  deadlineAt: number,
+  now: number = Date.now()
+): BountyStatus {
+  if (
+    status === 'released' ||
+    status === 'refunded' ||
+    status === 'expired' ||
+    status === 'submitted'
+  ) {
+    return status;
+  }
+
+  return now >= deadlineAt ? 'expired' : status;
+}
+
+export function formatAmount(amount: number, tokenSymbol: string): string {
+  return `${amount.toFixed(7)} ${tokenSymbol}`;
+}
+
 export function getRepoMetrics(bounties: Bounty[], repo: string) {
   const repoBounties = bounties.filter((bounty) => bounty.repo === repo);
-  const openBounties = repoBounties.filter((bounty) => bounty.status === "open");
-  const reservedBounties = repoBounties.filter((bounty) => bounty.status === "reserved");
-  const submittedBounties = repoBounties.filter((bounty) => bounty.status === "submitted");
-  const releasedBounties = repoBounties.filter((bounty) => bounty.status === "released");
-  const refundedBounties = repoBounties.filter((bounty) => bounty.status === "refunded");
-  const expiredBounties = repoBounties.filter((bounty) => bounty.status === "expired");
+  const openBounties = repoBounties.filter((bounty) => bounty.status === 'open');
+  const reservedBounties = repoBounties.filter((bounty) => bounty.status === 'reserved');
+  const submittedBounties = repoBounties.filter((bounty) => bounty.status === 'submitted');
+  const releasedBounties = repoBounties.filter((bounty) => bounty.status === 'released');
+  const refundedBounties = repoBounties.filter((bounty) => bounty.status === 'refunded');
+  const expiredBounties = repoBounties.filter((bounty) => bounty.status === 'expired');
 
   return {
     totalBounties: repoBounties.length,
@@ -44,15 +78,22 @@ export function getRepoMetrics(bounties: Bounty[], repo: string) {
 
 export function filterBounties(bounties: Bounty[], filters: FilterState): Bounty[] {
   return bounties.filter((bounty) => {
-    if (filters.statusFilter !== "all" && bounty.status !== filters.statusFilter) {
+    if (filters.statusFilter !== 'all' && bounty.status !== filters.statusFilter) {
       return false;
     }
 
-    if (filters.repoFilter.trim() !== "" && bounty.repo !== filters.repoFilter) {
+    if (filters.repoFilter.trim() !== '' && bounty.repo !== filters.repoFilter) {
       return false;
     }
 
-    if (filters.searchQuery.trim() !== "") {
+    if (
+      filters.tokenFilter.trim() !== '' &&
+      bounty.tokenSymbol?.toUpperCase() !== filters.tokenFilter.toUpperCase()
+    ) {
+      return false;
+    }
+
+    if (filters.searchQuery.trim() !== '') {
       const searchLower = filters.searchQuery.toLowerCase();
       const matchesSearch =
         bounty.repo.toLowerCase().includes(searchLower) ||
@@ -65,29 +106,44 @@ export function filterBounties(bounties: Bounty[], filters: FilterState): Bounty
       }
     }
 
-    const minReward = filters.minReward === "" ? 0 : Number(filters.minReward);
-    const maxReward = filters.maxReward === "" ? Infinity : Number(filters.maxReward);
-    return bounty.amount >= minReward && bounty.amount <= maxReward;
+    const minReward = filters.minReward === '' ? 0 : Number(filters.minReward);
+    const maxReward = filters.maxReward === '' ? Infinity : Number(filters.maxReward);
+
+    if (bounty.amount < minReward || bounty.amount > maxReward) {
+      return false;
+    }
+
+    return true;
   });
 }
 
-export function getRewardBounds(bounties: Bounty[]): { lowest: number; highest: number } {
+export function getRewardBounds(bounties: Bounty[]): {
+  lowest: number;
+  highest: number;
+} {
   if (bounties.length === 0) {
     return { lowest: 0, highest: 0 };
   }
 
   const amounts = bounties.map((bounty) => bounty.amount);
+
   return {
     lowest: Math.min(...amounts),
     highest: Math.max(...amounts),
   };
 }
 
-export type SortOption = "reward-high" | "reward-low" | "deadline-soonest" | "deadline-latest" | "newest" | "oldest";
+export type SortOption =
+  | 'reward-high'
+  | 'reward-low'
+  | 'deadline-soonest'
+  | 'deadline-latest'
+  | 'newest'
+  | 'oldest';
 
 export interface SortState {
   option: SortOption;
-  direction: "asc" | "desc";
+  direction: 'asc' | 'desc';
 }
 
 export function sortBounties(bounties: Bounty[], sort: SortState): Bounty[] {
@@ -95,27 +151,27 @@ export function sortBounties(bounties: Bounty[], sort: SortState): Bounty[] {
     let comparison = 0;
 
     switch (sort.option) {
-      case "reward-high":
-        comparison = b.amount - a.amount;
-        break;
-      case "reward-low":
+      case 'reward-high':
         comparison = a.amount - b.amount;
         break;
-      case "deadline-soonest":
+      case 'reward-low':
+        comparison = a.amount - b.amount;
+        break;
+      case 'deadline-soonest':
         comparison = a.deadlineAt - b.deadlineAt;
         break;
-      case "deadline-latest":
-        comparison = b.deadlineAt - a.deadlineAt;
+      case 'deadline-latest':
+        comparison = a.deadlineAt - b.deadlineAt;
         break;
-      case "newest":
-        comparison = b.createdAt - a.createdAt;
+      case 'newest':
+        comparison = a.createdAt - b.createdAt;
         break;
-      case "oldest":
+      case 'oldest':
         comparison = a.createdAt - b.createdAt;
         break;
     }
 
-    return sort.direction === "asc" ? comparison : -comparison;
+    return sort.direction === 'asc' ? comparison : -comparison;
   });
 }
 
@@ -124,11 +180,11 @@ export function getActiveRewardLabel(
   maxReward: string,
   bounds: { lowest: number; highest: number },
 ): string {
-  const min = minReward === "" ? bounds.lowest : Number(minReward);
-  const max = maxReward === "" ? bounds.highest : Number(maxReward);
+  const min = minReward === '' ? bounds.lowest : Number(minReward);
+  const max = maxReward === '' ? bounds.highest : Number(maxReward);
 
   if (min === bounds.lowest && max === bounds.highest) {
-    return "All rewards";
+    return 'All rewards';
   }
 
   if (min === bounds.lowest) {
@@ -142,7 +198,8 @@ export function getActiveRewardLabel(
   return `${min} - ${max} XLM`;
 }
 
-const XLM_USD_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd";
+const XLM_USD_PRICE_URL =
+  'https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd';
 const XLM_USD_CACHE_MS = 5 * 60 * 1000;
 
 let cachedXlmUsdRate: { rate: number; fetchedAt: number } | null = null;
@@ -156,7 +213,10 @@ async function fetchXlmUsdRate(): Promise<number> {
   const timeoutId = window.setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(XLM_USD_PRICE_URL, { signal: controller.signal });
+    const response = await fetch(XLM_USD_PRICE_URL, {
+      signal: controller.signal,
+    });
+
     if (!response.ok) {
       throw new Error(`Failed to fetch XLM/USD rate: ${response.status}`);
     }
@@ -164,8 +224,8 @@ async function fetchXlmUsdRate(): Promise<number> {
     const data = (await response.json()) as { stellar?: { usd?: number } };
     const rate = data.stellar?.usd;
 
-    if (typeof rate !== "number" || !Number.isFinite(rate)) {
-      throw new Error("CoinGecko response did not include a numeric XLM/USD rate");
+    if (typeof rate !== 'number' || !Number.isFinite(rate)) {
+      throw new Error('CoinGecko response did not include a numeric XLM/USD rate');
     }
 
     cachedXlmUsdRate = { rate, fetchedAt: Date.now() };
@@ -178,14 +238,15 @@ async function fetchXlmUsdRate(): Promise<number> {
 export async function xlmToUsd(amount: number): Promise<string> {
   try {
     const rate = await fetchXlmUsdRate();
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
+
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount * rate);
   } catch {
-    return "USD unavailable";
+    return 'USD unavailable';
   }
 }
 
@@ -210,11 +271,10 @@ export function getContributorMetrics(bounties: Bounty[], contributorAddress?: s
   contributorBounties.forEach((bounty) => {
     countsByStatus.set(bounty.status, (countsByStatus.get(bounty.status) || 0) + 1);
 
-    if (bounty.status === "released") {
-      releasedTotalsByAsset.set(
-        bounty.tokenSymbol,
-        (releasedTotalsByAsset.get(bounty.tokenSymbol) || 0) + bounty.amount,
-      );
+    if (bounty.status === 'released') {
+      const asset = bounty.tokenSymbol;
+
+      releasedTotalsByAsset.set(asset, (releasedTotalsByAsset.get(asset) || 0) + bounty.amount);
     }
   });
 
@@ -227,34 +287,35 @@ export function getContributorMetrics(bounties: Bounty[], contributorAddress?: s
 }
 
 let cachedRate: number | null = null;
-let cacheTimestamp: number = 0;
+let cacheTimestamp = 0;
 let pendingRequest: Promise<number | null> | null = null;
-const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+const CACHE_DURATION = 5 * 60 * 1000;
 
-/**
- * Fetches the current XLM/USD rate from CoinGecko with a 5-minute cache.
- */
 export async function getXlmRate(): Promise<number | null> {
   const now = Date.now();
+
   if (cachedRate !== null && now - cacheTimestamp < CACHE_DURATION) {
     return cachedRate;
   }
 
-  if (pendingRequest) return pendingRequest;
+  if (pendingRequest) {
+    return pendingRequest;
+  }
 
   pendingRequest = (async () => {
     try {
-      const response = await fetch(
-        "https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=usd"
-      );
-      if (!response.ok) throw new Error("API response not ok");
-      const data = await response.json();
+      const response = await fetch(XLM_USD_PRICE_URL);
+
+      if (!response.ok) {
+        throw new Error('API response not ok');
+      }
+
+      const data = (await response.json()) as { stellar: { usd: number } };
       cachedRate = data.stellar.usd;
       cacheTimestamp = Date.now();
+
       return cachedRate;
-    } catch (error) {
-      console.error("Failed to fetch XLM/USD rate:", error);
-      // Fallback to last known rate if available
+    } catch {
       return cachedRate;
     } finally {
       pendingRequest = null;

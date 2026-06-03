@@ -1145,15 +1145,17 @@
   },
   {
     "id": "AUD-000089",
+
     "bountyId": "BNT-0090",
     "fromStatus": "open",
     "toStatus": "expired",
     "transition": "expire",
     "actor": "system",
-    "timestamp": 1779859343,
+
     "metadata": {
       "reason": "deadline_passed",
       "deadlineAt": 1779815009
     }
+
   }
 ]

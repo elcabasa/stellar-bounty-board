@@ -1,8 +1,11 @@
-
-import { ReactNode, useCallback, useState } from "react";
-import { ArrowUpRight, Check, Clock, Copy } from "lucide-react";
-import UsdAmount from "./UsdAmount";
+import { ReactNode, useState, useCallback, useEffect, useRef } from "react";
+import { ArrowUpRight, Check, Clock, Copy, Share2, Printer } from "lucide-react";
 import { Bounty, BountyEvent, BountyStatus } from "./types";
+import BountyCountdown from "./BountyCountdown";
+import UsdAmount from "./UsdAmount";
+import { updateSocialMetaTags } from "./metaTags";
+import CopyIcon from "./CopyIcons";
+
 
 type BountyAction = "reserve" | "submit" | "release" | "refund";
 
@@ -24,40 +27,42 @@ type Props = {
   formatTimestamp: (value?: number) => string;
 };
 
-function useCopyToClipboard(timeout = 2000) {
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+function useBountyStatusAnnouncement(
+  bounty: Bounty | null,
+  statusCopy: Record<BountyStatus, { label: string; description: string }>,
+  clearAfterMs = 3000,
+) {
+  const previousStatusRef = useRef<{ id: string; status: BountyStatus } | null>(null);
+  const [announcement, setAnnouncement] = useState("");
 
-  const copy = useCallback(
-    (text: string, key: string) => {
-      void navigator.clipboard.writeText(text).then(() => {
-        setCopiedKey(key);
-        setTimeout(() => setCopiedKey(null), timeout);
-      });
-    },
-    [timeout],
-  );
+  useEffect(() => {
+    if (!bounty) {
+      previousStatusRef.current = null;
+      setAnnouncement("");
+      return;
+    }
 
-  return { copiedKey, copy };
-}
+    const previous = previousStatusRef.current;
+    if (previous?.id === bounty.id && previous.status !== bounty.status) {
+      setAnnouncement(
+        `Bounty #${bounty.issueNumber} status changed to ${statusCopy[bounty.status].label}`,
+      );
+    }
 
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const { copiedKey, copy } = useCopyToClipboard();
-  const copied = copiedKey !== null;
+    previousStatusRef.current = { id: bounty.id, status: bounty.status };
+  }, [bounty, statusCopy]);
 
-  return (
-    <span className="copy-button-wrapper">
-      <button
-        type="button"
-        className="copy-button"
-        aria-label={copied ? "Copied" : `Copy ${label}`}
-        title={copied ? "Copied" : `Copy ${label}`}
-        onClick={() => copy(text, label)}
-      >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </button>
-      {copied && <span className="copy-tooltip">Copied</span>}
-    </span>
-  );
+  useEffect(() => {
+    if (!announcement) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setAnnouncement("");
+    }, clearAfterMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [announcement, clearAfterMs]);
+
+  return announcement;
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -114,8 +119,42 @@ export default function BountyDetailPage({
   formatTimestamp,
 }: Props) {
 
+  const statusAnnouncement = useBountyStatusAnnouncement(bounty, statusCopy);
+
+  useEffect(() => {
+    updateSocialMetaTags(bounty);
+    return () => {
+      updateSocialMetaTags(null);
+    };
+  }, [bounty]);
+
+  function handlePrint() {
+    window.print();
+  }
+
+  function handleShare() {
+    if (!bounty) return;
+    const permalink = `${window.location.origin}/bounties/${encodeURIComponent(bounty.id)}`;
+    navigator.clipboard.writeText(permalink).then(() => {
+      // Show brief confirmation
+      const button = document.querySelector('[aria-label="Share bounty"]') as HTMLButtonElement;
+      if (button) {
+        const originalText = button.innerHTML;
+        button.innerHTML = `<Share2 size={16} />Copied!`;
+        setTimeout(() => {
+          button.innerHTML = originalText;
+        }, 2000);
+      }
+    }).catch((err) => {
+      console.error("Failed to copy URL:", err);
+    });
+  }
+
   return (
     <div className="page-shell">
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {statusAnnouncement}
+      </div>
       <div className="glow glow-left" />
       <div className="glow glow-right" />
 
@@ -125,14 +164,27 @@ export default function BountyDetailPage({
             <span className="panel-kicker">Bounty</span>
             <h2>{bounty ? bounty.title : "Bounty"}</h2>
           </div>
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={onBack}
-            disabled={loading}
-          >
-            Back
-          </button>
+          <div className="panel-header__actions">
+            <button
+              type="button"
+              className="secondary-button print-button"
+              onClick={handlePrint}
+              disabled={loading || !bounty}
+              aria-label="Print / Export PDF"
+              title="Print / Export PDF"
+            >
+              <Printer size={16} />
+              Print / Export PDF
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onBack}
+              disabled={loading}
+            >
+              Back
+            </button>
+          </div>
         </div>
 
         {loading && !bounty ? (
@@ -172,7 +224,7 @@ export default function BountyDetailPage({
                 <span className="meta-label">Bounty ID</span>
                 <strong className="copy-row">
                   {bounty.id}
-                  <CopyButton text={bounty.id} label="bounty ID" />
+                  <CopyIcon text={bounty.id} label="bounty ID" />
                 </strong>
               </div>
               <div>
@@ -194,13 +246,16 @@ export default function BountyDetailPage({
               </div>
               <div>
                 <span className="meta-label">Deadline</span>
-                <strong>{formatTimestamp(bounty.deadlineAt)}</strong>
+                <strong>
+                  {formatTimestamp(bounty.deadlineAt)}{" "}
+                  <BountyCountdown deadlineAt={bounty.deadlineAt} status={bounty.status} />
+                </strong>
               </div>
               <div>
                 <span className="meta-label">Maintainer</span>
                 <strong className="copy-row">
                   {bounty.maintainer}
-                  <CopyButton text={bounty.maintainer} label="maintainer wallet address" />
+                  <CopyIcon text={bounty.maintainer} label="maintainer wallet address" />
                 </strong>
               </div>
               <div>
@@ -208,7 +263,7 @@ export default function BountyDetailPage({
                 <strong className="copy-row">
                   {bounty.contributor ?? "Open"}
                   {bounty.contributor && (
-                    <CopyButton text={bounty.contributor} label="contributor address" />
+                    <CopyIcon text={bounty.contributor} label="contributor address" />
                   )}
                 </strong>
               </div>
@@ -241,7 +296,7 @@ export default function BountyDetailPage({
                   <span className="meta-label">Release tx</span>
                   <strong className="copy-row">
                     {bounty.releasedTxHash}
-                    <CopyButton text={bounty.releasedTxHash} label="release transaction hash" />
+                    <CopyIcon text={bounty.releasedTxHash} label="release transaction hash" />
                   </strong>
                 </div>
               )}
@@ -250,7 +305,7 @@ export default function BountyDetailPage({
                   <span className="meta-label">Refund tx</span>
                   <strong className="copy-row">
                     {bounty.refundedTxHash}
-                    <CopyButton text={bounty.refundedTxHash} label="refund transaction hash" />
+                    <CopyIcon text={bounty.refundedTxHash} label="refund transaction hash" />
                   </strong>
                 </div>
               )}
@@ -258,7 +313,7 @@ export default function BountyDetailPage({
 
             {bounty.labels.length > 0 && (
               <div className="chip-row chip-row--spaced">
-                {bounty.labels.map((label) => (
+                {bounty.labels.map((label: any) => (
                   <span className="chip" key={label.name}>
   {label.name}
 </span>

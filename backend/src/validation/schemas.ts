@@ -82,7 +82,6 @@ export const createBountySchema = z
         message: "Amount must have at most 7 decimal places.",
       })
       .openapi({ example: 100, description: "Bounty amount in XLM (1-10000, up to 7 decimal places)." }),
-      .min(1, "Amount must be at least 1 XLM."),
 
     deadlineDays: z.coerce
       .number()
@@ -201,6 +200,9 @@ export const bountyRecordSchema = z
     refundedTxHash: z.string().optional().openapi({ example: "0".repeat(64) }),
     submissionUrl: z.string().optional().openapi({ example: "https://github.com/owner/repo/pull/99" }),
     notes: z.string().optional(),
+    version: z.number().openapi({ example: 1 }),
+    events: z.array(z.any()).openapi({ description: "Bounty lifecycle events history." }),
+    reservationTimeoutSeconds: z.number().optional().openapi({ example: 604800 }),
   })
   .openapi("BountyRecord");
 
@@ -258,6 +260,7 @@ export const healthResponseSchema = z
     service: z.string().openapi({ example: "stellar-bounty-board-backend" }),
     status: z.string().openapi({ example: "ok" }),
     timestamp: z.string().openapi({ example: "2026-03-24T19:00:00.000Z" }),
+    openIssuesFeed: z.enum(["up", "rate-limited", "stale"]).optional().openapi({ example: "up" }),
   })
   .openapi("HealthResponse");
 

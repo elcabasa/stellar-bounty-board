@@ -45,18 +45,36 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(217, 128, 46, 0.14), transparent 28%),
-    radial-gradient(circle at 85% 10%, rgba(30, 143, 111, 0.12), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      rgba(217, 128, 46, 0.14),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 85% 10%,
+      rgba(30, 143, 111, 0.12),
+      transparent 24%
+    ),
     linear-gradient(180deg, #f9f2e7 0%, #f3e9db 100%);
   color: var(--ink);
   font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
-  transition: background 0.3s ease, color 0.3s ease;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
 }
 
 [data-theme="dark"] body {
   background:
-    radial-gradient(circle at top left, rgba(244, 162, 74, 0.08), transparent 28%),
-    radial-gradient(circle at 85% 10%, rgba(52, 201, 148, 0.07), transparent 24%),
+    radial-gradient(
+      circle at top left,
+      rgba(244, 162, 74, 0.08),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 85% 10%,
+      rgba(52, 201, 148, 0.07),
+      transparent 24%
+    ),
     linear-gradient(180deg, #111614 0%, #0d1512 100%);
 }
 
@@ -160,7 +178,10 @@ textarea {
   color: var(--ink);
   cursor: pointer;
   padding: 6px 10px;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s,
+    border-color 0.2s;
   z-index: 5;
 }
 
@@ -312,6 +333,21 @@ textarea {
   background: #fff0eb;
   border: 1px solid rgba(184, 85, 75, 0.22);
   color: #7a2e25;
+}
+
+.offline-banner {
+  margin-bottom: 20px;
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: #fff3cd;
+  border: 1px solid rgba(217, 128, 46, 0.3);
+  color: #856404;
+}
+
+[data-theme="dark"] .offline-banner {
+  background: rgba(244, 162, 74, 0.15);
+  border-color: rgba(244, 162, 74, 0.3);
+  color: #f4a24a;
 }
 
 .content-grid {
@@ -1314,7 +1350,6 @@ select {
     grid-template-columns: 1fr;
   }
 
-
   .hero h1 {
     max-width: none;
   }
@@ -1445,7 +1480,9 @@ select {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
 }
 
 .modal-close-btn:hover {
@@ -1569,7 +1606,10 @@ select {
   cursor: pointer;
   padding: 2px 4px;
   line-height: 1;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
   flex-shrink: 0;
 }
 
@@ -1606,8 +1646,14 @@ select {
 }
 
 @keyframes tooltip-fade-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* ── Activity Timeline ────────────────────────────────────────────────── */
@@ -1669,12 +1715,30 @@ select {
   margin-top: 2px;
 }
 
-.bounty-timeline__item--created .bounty-timeline__dot  { border-color: var(--mint); background: var(--mint-soft); }
-.bounty-timeline__item--reserved .bounty-timeline__dot { border-color: var(--amber); background: var(--amber-soft); }
-.bounty-timeline__item--submitted .bounty-timeline__dot { border-color: #7b5ea7; background: #f0eaf8; }
-.bounty-timeline__item--released .bounty-timeline__dot  { border-color: var(--mint); background: var(--mint); }
-.bounty-timeline__item--refunded .bounty-timeline__dot  { border-color: var(--rose); background: #f9ece9; }
-.bounty-timeline__item--expired .bounty-timeline__dot   { border-color: var(--muted); background: var(--line); }
+.bounty-timeline__item--created .bounty-timeline__dot {
+  border-color: var(--mint);
+  background: var(--mint-soft);
+}
+.bounty-timeline__item--reserved .bounty-timeline__dot {
+  border-color: var(--amber);
+  background: var(--amber-soft);
+}
+.bounty-timeline__item--submitted .bounty-timeline__dot {
+  border-color: #7b5ea7;
+  background: #f0eaf8;
+}
+.bounty-timeline__item--released .bounty-timeline__dot {
+  border-color: var(--mint);
+  background: var(--mint);
+}
+.bounty-timeline__item--refunded .bounty-timeline__dot {
+  border-color: var(--rose);
+  background: #f9ece9;
+}
+.bounty-timeline__item--expired .bounty-timeline__dot {
+  border-color: var(--muted);
+  background: var(--line);
+}
 
 .bounty-timeline__content {
   display: flex;
@@ -1766,4 +1830,311 @@ select {
   /* 6. Deadline / countdown text — the text updates via React re-renders
         (no CSS animation), but any wrapping transition is already covered
         by the global rule above. No extra rule needed. */
+}
+
+/* ── Header Navigation ── */
+.header-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-radius: 20px;
+  border: 1px solid rgba(54, 63, 59, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  margin-bottom: 24px;
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  position: relative;
+}
+
+[data-theme="dark"] .header-nav {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(31, 36, 33, 0.75);
+}
+
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ink);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.nav-logo:hover {
+  opacity: 0.85;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-link-btn {
+  background: none;
+  border: none;
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 8px 14px;
+  border-radius: 10px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-link-btn:hover {
+  background: rgba(54, 63, 59, 0.06);
+  color: var(--mint);
+}
+
+[data-theme="dark"] .nav-link-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.connect-wallet-btn {
+  background: var(--ink);
+  color: #fff7ef;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.connect-wallet-btn:hover {
+  transform: translateY(-1px);
+  background: rgba(31, 36, 33, 0.9);
+}
+
+[data-theme="dark"] .connect-wallet-btn {
+  background: var(--mint);
+  color: #0d4736;
+}
+
+[data-theme="dark"] .connect-wallet-btn:hover {
+  background: #25a47e;
+}
+
+/* ── Maintainer Dashboard ── */
+.maintainer-analytics {
+  display: grid;
+  gap: 24px;
+  animation: rise 0.4s ease-out;
+  margin-top: 10px;
+}
+
+.analytics-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.analytics-header__info h1 {
+  margin: 4px 0 0;
+  font-size: 1.8rem;
+  font-weight: 800;
+}
+
+.analytics-header__info .meta-label {
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 980px) {
+  .analytics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .analytics-grid {
+    grid-template-columns: 1fr;
+  }
+  .header-nav {
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+  }
+  .nav-links {
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .nav-link-btn, .connect-wallet-btn {
+    width: 100%;
+    text-align: center;
+  }
+}
+
+.analytics-card {
+  border-radius: 22px;
+  border: 1px solid rgba(54, 63, 59, 0.1);
+  background: rgba(255, 255, 255, 0.68);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.01);
+}
+
+[data-theme="dark"] .analytics-card {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(31, 36, 33, 0.6);
+}
+
+.analytics-card span {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.analytics-card strong {
+  font-size: 1.6rem;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.charts-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .charts-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-container {
+  border-radius: 22px;
+  border: 1px solid rgba(54, 63, 59, 0.1);
+  background: rgba(255, 255, 255, 0.68);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+[data-theme="dark"] .chart-container {
+  border-color: rgba(255, 255, 255, 0.06);
+  background: rgba(31, 36, 33, 0.6);
+}
+
+.chart-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.chart-wrapper {
+  position: relative;
+  width: 100%;
+  height: 260px;
+}
+
+/* Premium Chart SVG Styles */
+.chart-gridline {
+  stroke: rgba(54, 63, 59, 0.08);
+  stroke-width: 1px;
+}
+
+[data-theme="dark"] .chart-gridline {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
+.chart-text {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  fill: var(--muted);
+  user-select: none;
+}
+
+.chart-bar {
+  transition: fill-opacity 0.2s ease;
+  cursor: pointer;
+}
+
+.chart-bar:hover {
+  fill-opacity: 0.9;
+}
+
+.chart-line {
+  fill: none;
+  stroke-width: 3px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-dot {
+  stroke-width: 2px;
+  cursor: pointer;
+  transition: r 0.15s ease;
+}
+
+.chart-dot:hover {
+  r: 6px;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.8rem;
+  font-family: "IBM Plex Mono", monospace;
+  justify-content: flex-end;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.chart-tooltip {
+  position: absolute;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  font-family: "IBM Plex Mono", monospace;
+  z-index: 10;
+}
+
+.countdown {
+  font-size: 0.9em;
+  opacity: 0.8;
+  margin-left: 0.5rem;
+}
+
+.countdown--urgent {
+  color: #ff4d4d;
+  font-weight: bold;
+  opacity: 1;
 }
