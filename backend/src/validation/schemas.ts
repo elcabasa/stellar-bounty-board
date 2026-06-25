@@ -254,7 +254,9 @@ export const bountyAuditLogPaginationSchema = z
 export const bountyAuditLogListResponseSchema = z
   .object({
     data: z.array(bountyAuditLogSchema),
-    pagination: bountyAuditLogPaginationSchema,
+    total: z.number().int().min(0).openapi({ example: 3 }),
+    page: z.number().int().min(1).openapi({ example: 1 }),
+    pageSize: z.number().int().min(1).max(100).openapi({ example: 20 }),
   })
   .openapi('BountyAuditLogListResponse');
 

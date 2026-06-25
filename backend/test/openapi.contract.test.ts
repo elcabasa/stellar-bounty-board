@@ -56,7 +56,7 @@ describe('OpenAPI contract — responses match zod schemas', () => {
     bountyRecordSchema.strict().parse(releaseRes.body.data);
 
     // Audit logs
-    const auditRes = await request(app).get(`/api/bounties/${bounty.id}/audit-logs`).expect(200);
+    const auditRes = await request(app).get(`/api/bounties/${bounty.id}/audit-log`).expect(200);
     bountyAuditLogListResponseSchema.strict().parse(auditRes.body);
   });
 

@@ -158,18 +158,20 @@ describe("API — bounty lifecycle routes", () => {
     expect(rel.body.data.releasedTxHash).toBe(txHash);
 
     const logs = await request(app)
-      .get(`/api/bounties/${id}/audit-logs`)
-      .query({ limit: 10, offset: 0 })
+      .get(`/api/bounties/${id}/audit-log`)
+      .query({ page: 1, pageSize: 10 })
       .expect(200);
     expect(logs.body.data.map((entry: { transition: string }) => entry.transition)).toEqual([
       "reserve",
       "submit",
       "release",
     ]);
-    expect(logs.body.pagination.total).toBe(3);
+    expect(logs.body.total).toBe(3);
+    expect(logs.body.page).toBe(1);
+    expect(logs.body.pageSize).toBe(10);
   });
 
-  it("GET /api/bounties/:id/audit-logs supports pagination", async () => {
+  it("GET /api/bounties/:id/audit-log supports pagination", async () => {
     const app = await getApp();
     const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     const id = created.data.id as string;
@@ -181,24 +183,33 @@ describe("API — bounty lifecycle routes", () => {
       .expect(200);
     await request(app).post(`/api/bounties/${id}/release`).send({ maintainer: MAINTAINER }).expect(200);
 
-    const first = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 2, offset: 0 }).expect(200);
+    const first = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 1, pageSize: 2 }).expect(200);
     expect(first.body.data).toHaveLength(2);
-    expect(first.body.pagination.hasMore).toBe(true);
-    expect(first.body.pagination.nextOffset).toBe(2);
+    expect(first.body.page).toBe(1);
+    expect(first.body.pageSize).toBe(2);
+    expect(first.body.total).toBe(3);
 
-    const second = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 2, offset: 2 }).expect(200);
+    const second = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 2, pageSize: 2 }).expect(200);
     expect(second.body.data).toHaveLength(1);
-    expect(second.body.pagination.hasMore).toBe(false);
-    expect(second.body.pagination.nextOffset).toBeNull();
+    expect(second.body.page).toBe(2);
+    expect(second.body.pageSize).toBe(2);
+    expect(second.body.total).toBe(3);
   });
 
-  it("GET /api/bounties/:id/audit-logs validates query params", async () => {
+  it("GET /api/bounties/:id/audit-log validates query params", async () => {
     const app = await getApp();
     const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     const id = created.data.id as string;
 
-    const res = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 0 }).expect(400);
-    expect(res.body.error).toMatch(/limit/i);
+    const res = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 0 }).expect(400);
+    expect(res.body.error).toMatch(/page/i);
+  });
+
+  it("GET /api/bounties/:id/audit-log returns 404 for unknown bounty IDs", async () => {
+    const app = await getApp();
+
+    const res = await request(app).get('/api/bounties/BNT-9999/audit-log').expect(404);
+    expect(res.body.error).toMatch(/not found/i);
   });
 
   it("GET /api/bounties/released/export.csv returns CSV export", async () => {

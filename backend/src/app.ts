@@ -292,6 +292,33 @@ app.get('/api/bounties/:id/audit-logs', (req: Request, res: Response) => {
   }
 });
 
+app.get('/api/bounties/:id/audit-log', (req: Request, res: Response) => {
+  try {
+    const id = parseId(req.params.id);
+    const pageNumber = parsePaginationValue(req.query.page, 'page', 1, 1);
+    const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
+    const bounties = listBounties();
+    const bountyExists = bounties.some((item) => item.id === id);
+
+    if (!bountyExists) {
+      jsonError(res, req, 404, 'Bounty not found.');
+      return;
+    }
+
+    const offset = (pageNumber - 1) * pageSize;
+    const page = listBountyAuditLogs(id, { limit: pageSize, offset });
+
+    res.json({
+      data: page.data,
+      total: page.pagination.total,
+      page: pageNumber,
+      pageSize,
+    });
+  } catch (error) {
+    sendError(res, req, error);
+  }
+});
+
 app.get('/api/bounties/released/export.csv', (req: Request, res: Response) => {
   try {
     const { repo, contributor, asset, issueNumber } = req.query;
