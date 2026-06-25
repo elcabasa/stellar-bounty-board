@@ -65,8 +65,11 @@ export const createBountySchema = z
       }),
     amount: z.coerce
       .number()
-
-
+      .positive()
+      .openapi({
+        example: 42.5,
+        description: 'Payout amount in the selected token.',
+      }),
     deadlineDays: z.coerce
       .number()
       .int()

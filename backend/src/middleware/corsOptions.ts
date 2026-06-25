@@ -47,6 +47,7 @@ export function buildCorsOptions(): CorsOptions {
       "X-Hub-Signature-256",
       "X-Stellar-Signature",
       "X-Stellar-Public-Key",
+      "Idempotency-Key",
     ],
     credentials: true,
   };
