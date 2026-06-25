@@ -9,6 +9,7 @@ import { getMetrics, httpRequestDuration } from './metrics';
 
 import {
   createBounty,
+  disputeBounty,
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
@@ -28,10 +29,12 @@ import {
 import {
   bountyIdSchema,
   createBountySchema,
+  disputeBountySchema,
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
   zodErrorMessage,
+} from './validation/schemas';
 
 import {
   captureRawBody,
@@ -468,6 +471,32 @@ app.post(
         parseId(req.params.id),
         parsedBody.data.maintainer,
         parsedBody.data.transactionHash
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/dispute',
+  mutationLimiter,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = disputeBountySchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await disputeBounty(
+        parseId(req.params.id),
+        parsedBody.data.contributor,
+        parsedBody.data.reason
       );
 
       res.json({ data: bounty });

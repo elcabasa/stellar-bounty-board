@@ -124,6 +124,23 @@ export const submitBountySchema = z
   })
   .openapi('SubmitBountyRequest');
 
+export const disputeBountySchema = z
+  .object({
+    contributor: stellarAccountSchema.openapi({
+      description: 'Stellar public key of the contributor disputing the bounty.',
+    }),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Reason is required.')
+      .max(500, 'Reason must be at most 500 characters.')
+      .openapi({
+        example: 'The submitted solution was not reviewed within the agreed timeframe.',
+        description: 'Reason for disputing the bounty (1–500 chars).',
+      }),
+  })
+  .openapi('DisputeBountyRequest');
+
 export const maintainerActionSchema = z
   .object({
     maintainer: stellarAccountSchema.openapi({

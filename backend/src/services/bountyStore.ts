@@ -26,7 +26,8 @@ export type BountyStatus =
   | "submitted"
   | "released"
   | "refunded"
-  | "expired";
+  | "expired"
+  | "disputed";
 
 
 /**
@@ -45,7 +46,8 @@ export type BountyTransitionType =
   | "submit"
   | "release"
   | "refund"
-  | "expire";
+  | "expire"
+  | "dispute";
 
 /**
  * Represents a historical event in the lifecycle of a bounty.
@@ -129,6 +131,10 @@ export interface BountyRecord {
   submissionUrl?: string;
   /** Submission notes left by the contributor. */
   notes?: string;
+  /** Unix timestamp in seconds of when the bounty was disputed. */
+  disputedAt?: number;
+  /** Reason provided by the contributor for disputing the bounty. */
+  disputeReason?: string;
   // Race condition prevention
   /** Version number of the record used for optimistic locking. */
   version: number;
@@ -843,6 +849,90 @@ export async function refundBounty(
       },
     ]);
     await invalidateBountyCache();
+    return persisted;
+  });
+}
+
+/**
+ * Disputes a submitted bounty, transitioning it to "disputed" status.
+ *
+ * Acquires a global lock during execution. Only the contributor who submitted
+ * the bounty can dispute it, and only when the bounty is in "submitted" status.
+ *
+ * @param {string} id - The unique ID of the bounty.
+ * @param {string} contributor - The Stellar address of the contributor disputing the bounty.
+ * @param {string} reason - The reason for disputing the bounty.
+ * @returns {Promise<BountyRecord>} A promise that resolves to the updated bounty record.
+ * @throws {Error} If the bounty is not found.
+ * @throws {Error} If the contributor address does not match the bounty's contributor.
+ * @throws {Error} If the bounty status is not "submitted".
+ */
+export async function disputeBounty(
+  id: string,
+  contributor: string,
+  reason: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.status !== "submitted") {
+      throw new Error("Only submitted bounties can be disputed.");
+    }
+    if (bounty.contributor !== contributor) {
+      throw new Error("Only the contributor who submitted this bounty can dispute it.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      status: "disputed",
+      disputedAt: now,
+      disputeReason: reason,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        {
+          type: "disputed",
+          timestamp: now,
+          actor: contributor,
+          details: { reason },
+        },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: "disputed",
+        transition: "dispute",
+        actor: contributor,
+        metadata: {
+          reason,
+        },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    // Notify maintainer and arbiter about the dispute
+    const recipients: NotificationRecipient[] = [
+      { role: "maintainer", address: bounty.maintainer },
+    ];
+    if (bounty.contributor) {
+      recipients.push({ role: "contributor", address: bounty.contributor });
+    }
+
+    sendNotification(recipients, "bounty_disputed", {
+      bountyId: id,
+      contributor,
+      reason,
+      disputedAt: now,
+    }).catch((err) =>
+      console.warn("[disputeBounty] Notification failed (non-blocking):", err),
+    );
+
     return persisted;
   });
 }
