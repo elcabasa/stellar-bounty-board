@@ -32,6 +32,7 @@ import {
   reserveBountySchema,
   submitBountySchema,
   zodErrorMessage,
+} from './validation/schemas';
 
 import {
   captureRawBody,
@@ -41,6 +42,10 @@ import {
   createBountyCreationSignatureMiddleware,
   createStellarSignatureAuthMiddleware,
 } from './middleware/auth';
+import { idempotencyMiddleware } from './middleware/idempotency';
+import { readLimiter, mutationLimiter } from './utils';
+import { logStructured } from './logger';
+import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
@@ -382,7 +387,7 @@ app.post(
   }
 );
 
-app.post('/api/bounties/:id/reserve', mutationLimiter, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = reserveBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -403,7 +408,7 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, async (req: Request, res:
   }
 });
 
-app.post('/api/bounties/:id/submit', mutationLimiter, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = submitBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -428,6 +433,7 @@ app.post('/api/bounties/:id/submit', mutationLimiter, async (req: Request, res: 
 app.post(
   '/api/bounties/:id/release',
   mutationLimiter,
+  idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
     const parsedBody = maintainerActionSchema.safeParse(req.body);
@@ -454,6 +460,7 @@ app.post(
 app.post(
   '/api/bounties/:id/refund',
   mutationLimiter,
+  idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
     const parsedBody = maintainerActionSchema.safeParse(req.body);
