@@ -91,6 +91,9 @@ registry.registerPath({
       q: z.string().optional().openapi({
         description: "Case-insensitive substring filter applied to title, summary, and labels.",
       }),
+      contributor: z.string().optional().openapi({
+        description: "Exact Stellar public key filter applied to the bounty contributor.",
+      }),
       deadlineBefore: z.string().optional().openapi({
         description: "Filter bounties with deadline before this ISO 8601 date string.",
         example: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),

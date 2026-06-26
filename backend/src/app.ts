@@ -36,6 +36,7 @@ import {
   updateNotesSchema,
   zodErrorMessage,
 } from './validation/schemas';
+import { isValidStellarAddress } from './utils';
 
 import {
   captureRawBody,
@@ -271,6 +272,10 @@ app.get('/worker/health', (_req: Request, res: Response) => {
 app.get('/api/bounties', async (req: Request, res: Response) => {
   try {
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const contributor =
+      typeof req.query.contributor === 'string' && req.query.contributor.trim()
+        ? req.query.contributor.trim()
+        : undefined;
     const page = parsePaginationValue(req.query.page, 'page', 1, 1);
     const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
 
@@ -292,7 +297,11 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
       deadlineAfter = Math.floor(date.getTime() / 1000);
     }
 
-    const all = await listBountiesCached({ q, deadlineBefore, deadlineAfter });
+    if (contributor && !isValidStellarAddress(contributor)) {
+      throw new Error('contributor must be a valid Stellar public key');
+    }
+
+    const all = await listBountiesCached({ q, contributor, deadlineBefore, deadlineAfter });
     const total = all.length;
     const start = (page - 1) * pageSize;
     const data = all.slice(start, start + pageSize);
