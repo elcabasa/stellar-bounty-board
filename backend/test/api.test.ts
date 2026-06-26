@@ -209,6 +209,55 @@ describe("API — bounty list deadline filters", () => {
   });
 });
 
+describe("API — bounty list contributor filter", () => {
+  it("filters bounties by exact contributor address", async () => {
+    const app = await getApp();
+    const created = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = created.body.data.id;
+
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    const matched = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    expect(matched.body.data.some((b: any) => b.id === bountyId)).toBe(true);
+  });
+
+  it("returns no bounties when no contributor matches", async () => {
+    const app = await getApp();
+    const created = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = created.body.data.id;
+
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    const matched = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: OTHER_ACCOUNT })
+      .expect(200);
+
+    expect(matched.body.data).toHaveLength(0);
+  });
+
+  it("rejects invalid contributor addresses", async () => {
+    const app = await getApp();
+
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: "not-a-valid-address" })
+      .expect(400);
+
+    expect(res.body.error).toMatch(/contributor|Stellar public key/i);
+  });
+});
+
 describe("API — admin audit log endpoint", () => {
   it("GET /api/audit-log returns all audit logs", async () => {
     const app = await getApp();

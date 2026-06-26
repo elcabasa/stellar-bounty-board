@@ -465,6 +465,8 @@ function persistUpdated(
 export interface ListBountiesOptions {
   /** Case-insensitive substring filter applied to title, summary, and labels. */
   q?: string;
+  /** Exact Stellar address filter applied to contributor. */
+  contributor?: string;
   /** Filter bounties with deadlineBefore (unix timestamp in seconds). */
   deadlineBefore?: number;
   /** Filter bounties with deadlineAfter (unix timestamp in seconds). */
@@ -474,6 +476,7 @@ export interface ListBountiesOptions {
 export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] {
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
+  const contributor = options.contributor?.trim();
   const deadlineBefore = options.deadlineBefore;
   const deadlineAfter = options.deadlineAfter;
 
@@ -486,9 +489,10 @@ export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] 
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
       b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
     const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
     const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
-    if (passesQ && passesDeadlineBefore && passesDeadlineAfter) {
+    if (passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter) {
       result.push(b);
     }
   }
@@ -526,6 +530,7 @@ export async function listBountiesCached(
   }
 
   const q = options.q?.trim().toLowerCase();
+  const contributor = options.contributor?.trim();
   const deadlineBefore = options.deadlineBefore;
   const deadlineAfter = options.deadlineAfter;
 
@@ -535,9 +540,10 @@ export async function listBountiesCached(
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
       b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
     const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
     const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
-    return passesQ && passesDeadlineBefore && passesDeadlineAfter;
+    return passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter;
   });
 }
 
