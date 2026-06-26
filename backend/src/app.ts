@@ -3,6 +3,7 @@ import cors from 'cors';
 import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
+import pinoHttp from 'pino-http';
 import { buildCorsOptions } from './middleware/corsOptions';
 import { generateOpenApiDocument } from './docs/openapi';
 import { getMetrics, httpRequestDuration } from './metrics';
@@ -44,7 +45,7 @@ import {
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
 import { readLimiter, mutationLimiter } from './utils';
-import { logStructured } from './logger';
+import { logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 
@@ -65,9 +66,8 @@ function resolveRequestId(req: Request): string {
 }
 
 function requestContextMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const requestId = resolveRequestId(req);
-  req.requestId = requestId;
-  res.setHeader('X-Request-ID', requestId);
+  req.requestId = req.id as string;
+  res.setHeader('X-Request-ID', req.requestId);
 
   const start = process.hrtime.bigint();
 
@@ -84,14 +84,6 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
       },
       durationSec
     );
-
-    logStructured('info', 'http_request', {
-      requestId,
-      method: req.method,
-      path: req.path || '/',
-      status: res.statusCode,
-      durationMs: Math.round(durationMs * 1000) / 1000,
-    });
   });
 
   next();
@@ -108,6 +100,23 @@ app.use(
   })
 );
 
+app.use(
+  pinoHttp({
+    logger,
+    genReqId: (req) => resolveRequestId(req),
+    customLogLevel: (req, res, err) => {
+      if (res.statusCode >= 500 || err) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return 'info';
+    },
+    autoLogging: {
+      ignore: (req) => {
+        const url = req.url ?? '';
+        return url === '/api/health' || url === '/api/health/deep' || url === '/worker/health';
+      },
+    },
+  })
+);
 app.use(requestContextMiddleware);
 app.use(readLimiter);
 
