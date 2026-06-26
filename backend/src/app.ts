@@ -10,6 +10,7 @@ import { getMetrics, httpRequestDuration } from './metrics';
 
 import {
   createBounty,
+  disputeBounty,
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
@@ -29,6 +30,7 @@ import {
 import {
   bountyIdSchema,
   createBountySchema,
+  disputeBountySchema,
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
@@ -276,8 +278,22 @@ app.get('/worker/health', (_req: Request, res: Response) => {
 });
 
 app.get('/api/bounties', async (req: Request, res: Response) => {
-  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
-  res.json({ data: await listBountiesCached({ q }) });
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const page = parsePaginationValue(req.query.page, 'page', 1, 1);
+    const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
+
+    const all = await listBountiesCached({ q });
+    const total = all.length;
+    const start = (page - 1) * pageSize;
+    const data = all.slice(start, start + pageSize);
+    const hasMore = start + data.length < total;
+
+    res.setHeader('X-Total-Count', String(total));
+    res.json({ data, total, page, pageSize, hasMore });
+  } catch (error) {
+    sendError(res, req, error);
+  }
 });
 
 app.get('/api/leaderboard', (req: Request, res: Response) => {
@@ -512,6 +528,32 @@ app.post(
         parseId(req.params.id),
         parsedBody.data.maintainer,
         parsedBody.data.transactionHash
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/dispute',
+  mutationLimiter,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = disputeBountySchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await disputeBounty(
+        parseId(req.params.id),
+        parsedBody.data.contributor,
+        parsedBody.data.reason
       );
 
       res.json({ data: bounty });
