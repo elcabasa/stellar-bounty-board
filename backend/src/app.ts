@@ -1,4 +1,3 @@
-import compression from 'compression';
 import cors from 'cors';
 import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -24,7 +23,6 @@ import {
   getMaintainerMetrics,
   getGlobalMetrics,
   getLeaderboard,
-  listBountiesCached,
 } from './services/bountyStore';
 
 import {
@@ -104,7 +102,7 @@ app.use(
 
 app.use(
   pinoHttp({
-    logger,
+    logger: logger as any,
     genReqId: (req) => resolveRequestId(req),
     customLogLevel: (req, res, err) => {
       if (res.statusCode >= 500 || err) return 'error';
