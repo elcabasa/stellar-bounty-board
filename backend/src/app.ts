@@ -23,7 +23,7 @@ import {
   getMaintainerMetrics,
   getGlobalMetrics,
   getLeaderboard,
-  listBountiesCached,
+  updateBountyNotes,
 } from './services/bountyStore';
 
 import {
@@ -33,6 +33,7 @@ import {
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
+  updateNotesSchema,
   zodErrorMessage,
 } from './validation/schemas';
 
@@ -273,7 +274,25 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
     const page = parsePaginationValue(req.query.page, 'page', 1, 1);
     const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
 
-    const all = await listBountiesCached({ q });
+    let deadlineBefore: number | undefined;
+    if (typeof req.query.deadlineBefore === 'string') {
+      const date = new Date(req.query.deadlineBefore);
+      if (isNaN(date.getTime())) {
+        throw new Error('deadlineBefore must be a valid ISO 8601 date string');
+      }
+      deadlineBefore = Math.floor(date.getTime() / 1000);
+    }
+
+    let deadlineAfter: number | undefined;
+    if (typeof req.query.deadlineAfter === 'string') {
+      const date = new Date(req.query.deadlineAfter);
+      if (isNaN(date.getTime())) {
+        throw new Error('deadlineAfter must be a valid ISO 8601 date string');
+      }
+      deadlineAfter = Math.floor(date.getTime() / 1000);
+    }
+
+    const all = await listBountiesCached({ q, deadlineBefore, deadlineAfter });
     const total = all.length;
     const start = (page - 1) * pageSize;
     const data = all.slice(start, start + pageSize);
@@ -526,6 +545,32 @@ app.post(
   }
 );
 
+app.patch(
+  '/api/bounties/:id/notes',
+  mutationLimiter,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = updateNotesSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await updateBountyNotes(
+        parseId(req.params.id),
+        parsedBody.data.maintainer,
+        parsedBody.data.notes
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
 app.post(
   '/api/webhooks/github',
   createGitHubWebhookSignatureMiddleware(() => process.env.GITHUB_WEBHOOK_SECRET),
@@ -628,7 +673,22 @@ app.get(
     try {
       const limit = parsePaginationValue(req.query.limit, "limit", 50, 1, 200);
       const offset = parsePaginationValue(req.query.offset, "offset", 0, 0);
-      const page = listAllAuditLogs({ limit, offset });
+      
+      const actor = typeof req.query.actor === "string" ? req.query.actor : undefined;
+      const transition = typeof req.query.transition === "string" ? req.query.transition : undefined;
+      const bountyId = typeof req.query.bountyId === "string" ? req.query.bountyId : undefined;
+      const fromStatus = typeof req.query.fromStatus === "string" ? req.query.fromStatus : undefined;
+      const toStatus = typeof req.query.toStatus === "string" ? req.query.toStatus : undefined;
+      
+      const page = listAllAuditLogs({ 
+        limit, 
+        offset, 
+        actor, 
+        transition, 
+        bountyId, 
+        fromStatus, 
+        toStatus 
+      });
       res.json(page);
     } catch (error) {
       sendError(res, req, error);

@@ -47,14 +47,15 @@ export type BountyTransitionType =
   | "release"
   | "refund"
   | "expire"
-  | "dispute";
+  | "dispute"
+  | "update_notes";
 
 /**
  * Represents a historical event in the lifecycle of a bounty.
  */
 export interface BountyEvent {
   /** The type of event (usually matches the resulting status or "created"). */
-  type: BountyStatus | "created";
+  type: BountyStatus | "created" | "notes_updated";
   /** Unix timestamp in seconds when the event occurred. */
   timestamp: number;
   /** Stellar public key of the actor who triggered the event. */
@@ -464,23 +465,30 @@ function persistUpdated(
 export interface ListBountiesOptions {
   /** Case-insensitive substring filter applied to title, summary, and labels. */
   q?: string;
+  /** Filter bounties with deadlineBefore (unix timestamp in seconds). */
+  deadlineBefore?: number;
+  /** Filter bounties with deadlineAfter (unix timestamp in seconds). */
+  deadlineAfter?: number;
 }
 
 export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] {
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
 
   // Single-pass: filter and copy in one iteration, then sort.
-  // Avoids the prior two-pass pattern of spread-sort then filter.
   const result: BountyRecord[] = [];
   for (let i = 0; i < records.length; i++) {
     const b = records[i];
-    if (
+    const passesQ =
       !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q))
-    ) {
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    if (passesQ && passesDeadlineBefore && passesDeadlineAfter) {
       result.push(b);
     }
   }
@@ -497,7 +505,7 @@ const BOUNTY_LIST_TTL_SECONDS = 5;
 /**
  * Cache-backed variant of {@link listBounties} for the hot `/api/bounties` read
  * path. The full normalized+sorted list is cached (5s TTL) so it is shared
- * across replicas via Redis; the cheap `q` filter is applied to the cached list
+ * across replicas via Redis; filters are applied to the cached list
  * per request. Writes call {@link invalidateBountyCache}.
  *
  * @param {ListBountiesOptions} [options={}] - Filtering options for the bounty retrieval.
@@ -518,15 +526,19 @@ export async function listBountiesCached(
   }
 
   const q = options.q?.trim().toLowerCase();
-  if (!q) {
-    return records;
-  }
-  return records.filter(
-    (b) =>
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
+
+  return records.filter((b) => {
+    const passesQ =
+      !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q)),
-  );
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    return passesQ && passesDeadlineBefore && passesDeadlineAfter;
+  });
 }
 
 /**
@@ -937,6 +949,47 @@ export async function disputeBounty(
   });
 }
 
+export async function updateBountyNotes(
+  id: string,
+  maintainer: string,
+  notes: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.maintainer !== maintainer) {
+      throw new Error("Maintainer address does not match this bounty.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      notes,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        { type: "notes_updated", timestamp: now, actor: maintainer, details: { notes } },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: bounty.status, // same status, since we're just updating notes
+        transition: "update_notes",
+        actor: maintainer,
+        metadata: { notes },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    return persisted;
+  });
+}
+
 /**
  * Paginated response structure containing a slice of bounty audit logs.
  */
@@ -973,6 +1026,66 @@ export function listBountyAuditLogs(
 ): AuditLogPage {
   const { limit = 20, offset = 0 } = options;
   const all = readAuditStore().filter((log) => log.bountyId === bountyId);
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
+
+export interface ListAllAuditLogsOptions {
+  limit?: number;
+  offset?: number;
+  actor?: string;
+  transition?: string;
+  bountyId?: string;
+  fromStatus?: string;
+  toStatus?: string;
+}
+
+export function listAllAuditLogs(
+  options: ListAllAuditLogsOptions = {},
+): AuditLogPage {
+  const { 
+    limit = 50, 
+    offset = 0, 
+    actor, 
+    transition, 
+    bountyId, 
+    fromStatus, 
+    toStatus 
+  } = options;
+  
+  let all = readAuditStore();
+  
+  if (actor) {
+    all = all.filter((log) => log.actor === actor);
+  }
+  
+  if (transition) {
+    all = all.filter((log) => log.transition === transition);
+  }
+  
+  if (bountyId) {
+    all = all.filter((log) => log.bountyId === bountyId);
+  }
+  
+  if (fromStatus) {
+    all = all.filter((log) => log.fromStatus === fromStatus);
+  }
+  
+  if (toStatus) {
+    all = all.filter((log) => log.toStatus === toStatus);
+  }
+  
   const total = all.length;
   const data = all.slice(offset, offset + limit);
   const hasMore = offset + limit < total;
