@@ -232,6 +232,84 @@ describe('CORS allowlist middleware (#88)', () => {
   });
 });
 
+describe('GitHub webhook signature verification — all GitHub event types (#251)', () => {
+  const wrongSecret = 'definitely-not-the-real-secret';
+
+  const eventPayloads: Record<string, unknown> = {
+    'pull_request.closed': {
+      action: 'closed',
+      pull_request: {
+        html_url: 'https://github.com/owner/repo/pull/42',
+        merged: false,
+      },
+      repository: { full_name: 'owner/repo' },
+    },
+    'issues.closed': {
+      action: 'closed',
+      issue: {
+        number: 10,
+        title: 'Fix the bug',
+        html_url: 'https://github.com/owner/repo/issues/10',
+      },
+      repository: { full_name: 'owner/repo' },
+    },
+    create: {
+      ref_type: 'branch',
+      ref: 'feature/new-branch',
+      master_branch: 'main',
+      repository: { full_name: 'owner/repo' },
+    },
+  };
+
+  for (const [eventName, eventData] of Object.entries(eventPayloads)) {
+    describe(`${eventName} event`, () => {
+      it('accepts a valid signature', () => {
+        const payload = createPayloadBuffer(eventData);
+        expect(() =>
+          verifyGitHubWebhookSignature({
+            payload,
+            secret,
+            signatureHeader: createGitHubSignature(payload),
+          })
+        ).not.toThrow();
+      });
+
+      it('rejects a signature produced with the wrong secret', () => {
+        const payload = createPayloadBuffer(eventData);
+        const wrongSecretSig = signWebhookPayload({
+          payload,
+          secret: wrongSecret,
+          algorithm: githubWebhookSignatureProfile.algorithm,
+          prefix: githubWebhookSignatureProfile.prefix,
+        });
+        // Both sigs are sha256= + 64 hex chars (same length) so timingSafeEqual is exercised
+        expect(() =>
+          verifyGitHubWebhookSignature({
+            payload,
+            secret,
+            signatureHeader: wrongSecretSig,
+          })
+        ).toThrow(/Invalid GitHub webhook signature/i);
+      });
+
+      it('rejects when the payload is truncated (signature was for full payload)', () => {
+        const payload = createPayloadBuffer(eventData);
+        const sigForFullPayload = createGitHubSignature(payload);
+        // Drop the last byte — signature won't match the truncated content
+        const truncated = payload.subarray(0, payload.length - 1);
+        expect(() =>
+          verifyGitHubWebhookSignature({
+            payload: truncated,
+            secret,
+            signatureHeader: sigForFullPayload,
+          })
+        ).toThrow(/Invalid GitHub webhook signature/i);
+      });
+    });
+  }
+
+});
+
 describe('Bounty search with ?q= (#85)', () => {
   it('returns all bounties when q is empty', async () => {
     const { listBounties } = await import('../src/services/bountyStore');
