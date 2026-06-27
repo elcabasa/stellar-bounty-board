@@ -20,7 +20,7 @@ import {
 } from "./api";
 
 
-import SkeletonBountyCard from "./SkeletonBountyCard";
+import BountyListLoading from "./BountyListLoading";
 import EmptyState from "./EmptyState";
 import { ShortcutsHelpOverlay } from "./ShortcutsHelpOverlay";
 import BountyCountdown from "./BountyCountdown";
@@ -613,6 +613,7 @@ function App() {
             </div>
           </div>
 
+          {loading && <BountyListLoading />}
 
                   </div>
                 </div>
