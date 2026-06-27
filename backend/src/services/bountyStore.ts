@@ -26,7 +26,8 @@ export type BountyStatus =
   | "submitted"
   | "released"
   | "refunded"
-  | "expired";
+  | "expired"
+  | "disputed";
 
 
 /**
@@ -45,14 +46,16 @@ export type BountyTransitionType =
   | "submit"
   | "release"
   | "refund"
-  | "expire";
+  | "expire"
+  | "dispute"
+  | "update_notes";
 
 /**
  * Represents a historical event in the lifecycle of a bounty.
  */
 export interface BountyEvent {
   /** The type of event (usually matches the resulting status or "created"). */
-  type: BountyStatus | "created";
+  type: BountyStatus | "created" | "notes_updated";
   /** Unix timestamp in seconds when the event occurred. */
   timestamp: number;
   /** Stellar public key of the actor who triggered the event. */
@@ -129,6 +132,10 @@ export interface BountyRecord {
   submissionUrl?: string;
   /** Submission notes left by the contributor. */
   notes?: string;
+  /** Unix timestamp in seconds of when the bounty was disputed. */
+  disputedAt?: number;
+  /** Reason provided by the contributor for disputing the bounty. */
+  disputeReason?: string;
   // Race condition prevention
   /** Version number of the record used for optimistic locking. */
   version: number;
@@ -458,23 +465,34 @@ function persistUpdated(
 export interface ListBountiesOptions {
   /** Case-insensitive substring filter applied to title, summary, and labels. */
   q?: string;
+  /** Exact Stellar address filter applied to contributor. */
+  contributor?: string;
+  /** Filter bounties with deadlineBefore (unix timestamp in seconds). */
+  deadlineBefore?: number;
+  /** Filter bounties with deadlineAfter (unix timestamp in seconds). */
+  deadlineAfter?: number;
 }
 
 export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] {
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
+  const contributor = options.contributor?.trim();
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
 
   // Single-pass: filter and copy in one iteration, then sort.
-  // Avoids the prior two-pass pattern of spread-sort then filter.
   const result: BountyRecord[] = [];
   for (let i = 0; i < records.length; i++) {
     const b = records[i];
-    if (
+    const passesQ =
       !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q))
-    ) {
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    if (passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter) {
       result.push(b);
     }
   }
@@ -491,7 +509,7 @@ const BOUNTY_LIST_TTL_SECONDS = 5;
 /**
  * Cache-backed variant of {@link listBounties} for the hot `/api/bounties` read
  * path. The full normalized+sorted list is cached (5s TTL) so it is shared
- * across replicas via Redis; the cheap `q` filter is applied to the cached list
+ * across replicas via Redis; filters are applied to the cached list
  * per request. Writes call {@link invalidateBountyCache}.
  *
  * @param {ListBountiesOptions} [options={}] - Filtering options for the bounty retrieval.
@@ -512,15 +530,21 @@ export async function listBountiesCached(
   }
 
   const q = options.q?.trim().toLowerCase();
-  if (!q) {
-    return records;
-  }
-  return records.filter(
-    (b) =>
+  const contributor = options.contributor?.trim();
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
+
+  return records.filter((b) => {
+    const passesQ =
+      !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q)),
-  );
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    return passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter;
+  });
 }
 
 /**
@@ -848,6 +872,131 @@ export async function refundBounty(
 }
 
 /**
+ * Disputes a submitted bounty, transitioning it to "disputed" status.
+ *
+ * Acquires a global lock during execution. Only the contributor who submitted
+ * the bounty can dispute it, and only when the bounty is in "submitted" status.
+ *
+ * @param {string} id - The unique ID of the bounty.
+ * @param {string} contributor - The Stellar address of the contributor disputing the bounty.
+ * @param {string} reason - The reason for disputing the bounty.
+ * @returns {Promise<BountyRecord>} A promise that resolves to the updated bounty record.
+ * @throws {Error} If the bounty is not found.
+ * @throws {Error} If the contributor address does not match the bounty's contributor.
+ * @throws {Error} If the bounty status is not "submitted".
+ */
+export async function disputeBounty(
+  id: string,
+  contributor: string,
+  reason: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.status !== "submitted") {
+      throw new Error("Only submitted bounties can be disputed.");
+    }
+    if (bounty.contributor !== contributor) {
+      throw new Error("Only the contributor who submitted this bounty can dispute it.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      status: "disputed",
+      disputedAt: now,
+      disputeReason: reason,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        {
+          type: "disputed",
+          timestamp: now,
+          actor: contributor,
+          details: { reason },
+        },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: "disputed",
+        transition: "dispute",
+        actor: contributor,
+        metadata: {
+          reason,
+        },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    // Notify maintainer and arbiter about the dispute
+    const recipients: NotificationRecipient[] = [
+      { role: "maintainer", address: bounty.maintainer },
+    ];
+    if (bounty.contributor) {
+      recipients.push({ role: "contributor", address: bounty.contributor });
+    }
+
+    sendNotification(recipients, "bounty_disputed", {
+      bountyId: id,
+      contributor,
+      reason,
+      disputedAt: now,
+    }).catch((err) =>
+      console.warn("[disputeBounty] Notification failed (non-blocking):", err),
+    );
+
+    return persisted;
+  });
+}
+
+export async function updateBountyNotes(
+  id: string,
+  maintainer: string,
+  notes: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.maintainer !== maintainer) {
+      throw new Error("Maintainer address does not match this bounty.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      notes,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        { type: "notes_updated", timestamp: now, actor: maintainer, details: { notes } },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: bounty.status, // same status, since we're just updating notes
+        transition: "update_notes",
+        actor: maintainer,
+        metadata: { notes },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    return persisted;
+  });
+}
+
+/**
  * Paginated response structure containing a slice of bounty audit logs.
  */
 export interface AuditLogPage {
@@ -883,6 +1032,66 @@ export function listBountyAuditLogs(
 ): AuditLogPage {
   const { limit = 20, offset = 0 } = options;
   const all = readAuditStore().filter((log) => log.bountyId === bountyId);
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
+
+export interface ListAllAuditLogsOptions {
+  limit?: number;
+  offset?: number;
+  actor?: string;
+  transition?: string;
+  bountyId?: string;
+  fromStatus?: string;
+  toStatus?: string;
+}
+
+export function listAllAuditLogs(
+  options: ListAllAuditLogsOptions = {},
+): AuditLogPage {
+  const { 
+    limit = 50, 
+    offset = 0, 
+    actor, 
+    transition, 
+    bountyId, 
+    fromStatus, 
+    toStatus 
+  } = options;
+  
+  let all = readAuditStore();
+  
+  if (actor) {
+    all = all.filter((log) => log.actor === actor);
+  }
+  
+  if (transition) {
+    all = all.filter((log) => log.transition === transition);
+  }
+  
+  if (bountyId) {
+    all = all.filter((log) => log.bountyId === bountyId);
+  }
+  
+  if (fromStatus) {
+    all = all.filter((log) => log.fromStatus === fromStatus);
+  }
+  
+  if (toStatus) {
+    all = all.filter((log) => log.toStatus === toStatus);
+  }
+  
   const total = all.length;
   const data = all.slice(offset, offset + limit);
   const hasMore = offset + limit < total;

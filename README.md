@@ -48,6 +48,45 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system architecture, data o
 
 The [bounty lifecycle sequence diagram](docs/ARCHITECTURE.md#bounty-lifecycle-sequence) shows the create, reserve, submit, release, refund, dispute, and resolution flows across Maintainer, Contributor, Arbiter, Backend, and Contract actors.
 
+## Arbitration Flow
+
+Stellar Bounty Board uses an on-chain arbiter to resolve disputes fairly without requiring either party to trust the other.
+
+### Roles
+
+| Role | Description |
+|---|---|
+| **Maintainer** | Creates and funds the bounty escrow. |
+| **Contributor** | Reserves the bounty and submits a pull request for review. |
+| **Arbiter** | A trusted third-party address that resolves disputes. Configured once at contract initialisation. |
+
+### Configuration
+
+Set the arbiter's Stellar public key in your environment before starting the backend:
+
+```
+# .env
+ARBITER_ADDRESS=G...your_arbiter_stellar_public_key...
+```
+
+Verify it is recognised by the running server:
+
+```bash
+curl http://localhost:3001/api/health/deep
+# { "components": { "arbiter": "configured" } }
+```
+
+If `arbiter` is `"missing"`, the dispute flow will fail at the contract level.
+
+### Dispute lifecycle
+
+1. **Maintainer raises a dispute** — after the work is submitted, the maintainer can open a dispute within the on-chain dispute window.
+2. **Arbiter reviews** — the arbiter examines the submitted work off-chain (PR, deliverables, communication).
+3. **Arbiter resolves on-chain** — the arbiter calls `dispute_bounty` on the Soroban contract with the bounty ID and their address. The contract verifies the caller matches the stored `ARBITER_ADDRESS`.
+4. **Funds are released** — the contract releases the escrowed tokens to either the contributor (work accepted) or the maintainer (work rejected / refund).
+
+The arbiter address is immutable after `initialize` is called on the contract — rotate it only by redeploying the contract.
+
 ## Deployment Guide
 
 See [docs/deployment.md](docs/deployment.md) for step-by-step instructions to deploy the backend on Render and the frontend on Vercel, including required environment variables, health check paths, and troubleshooting tips.

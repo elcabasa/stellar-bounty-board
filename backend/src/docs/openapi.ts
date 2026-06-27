@@ -12,7 +12,8 @@ import {
   openIssueSchema,
   reserveBountySchema,
   submitBountySchema,
-} from "../validation/schemas";
+  updateNotesSchema,
+} from '../validation/schemas';
 
 const registry = new OpenAPIRegistry();
 
@@ -27,6 +28,7 @@ registry.register("CreateBountyRequest", createBountySchema);
 registry.register("ReserveBountyRequest", reserveBountySchema);
 registry.register("SubmitBountyRequest", submitBountySchema);
 registry.register("MaintainerActionRequest", maintainerActionSchema);
+registry.register("UpdateNotesRequest", updateNotesSchema);
 registry.register("ErrorResponse", errorResponseSchema);
 registry.register("OpenIssue", openIssueSchema);
 registry.register("HealthResponse", healthResponseSchema);
@@ -77,14 +79,68 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/health/deep",
+  tags: ["System"],
+  summary: "Deep health check",
+  description:
+    "Extended health check that verifies critical configuration is in place. " +
+    "Returns component-level status including whether the arbiter address is configured. " +
+    "The arbiter is a trusted Stellar account that mediates bounty disputes: when a maintainer " +
+    "raises a dispute, only the configured arbiter may call `dispute_bounty` on the Soroban contract " +
+    "to resolve it in favour of either the contributor or the maintainer. " +
+    "If `components.arbiter` is `\"missing\"`, set `ARBITER_ADDRESS` in your environment.",
+  responses: {
+    200: jsonResponse(
+      "Service is healthy with component details.",
+      z.object({
+        service: z.string(),
+        status: z.string(),
+        timestamp: z.string(),
+        components: z.object({
+          arbiter: z.enum(["configured", "missing"]).openapi({
+            description: "Whether ARBITER_ADDRESS is set in the server environment.",
+          }),
+        }),
+      }),
+    ),
+  },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/bounties",
   tags: ["Bounties"],
   summary: "List all bounties",
   description:
     "Returns every bounty record sorted by creation date (newest first). " +
     "Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
+  request: {
+    query: z.object({
+      q: z.string().optional().openapi({
+        description: "Case-insensitive substring filter applied to title, summary, and labels.",
+      }),
+      contributor: z.string().optional().openapi({
+        description: "Exact Stellar public key filter applied to the bounty contributor.",
+      }),
+      deadlineBefore: z.string().optional().openapi({
+        description: "Filter bounties with deadline before this ISO 8601 date string.",
+        example: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      }),
+      deadlineAfter: z.string().optional().openapi({
+        description: "Filter bounties with deadline after this ISO 8601 date string.",
+        example: new Date().toISOString(),
+      }),
+      page: z.number().int().min(1).optional().openapi({
+        description: "Page number (starts at 1, default 1).",
+      }),
+      pageSize: z.number().int().min(1).max(100).optional().openapi({
+        description: "Number of items per page (max 100, default 20).",
+      }),
+    }),
+  },
   responses: {
     200: jsonResponse("Array of all bounty records.", z.object({ data: z.array(bountyRecordSchema) })),
+    400: errorResponse("Invalid query parameters (e.g., invalid date string)."),
   },
 });
 
@@ -193,7 +249,7 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
-  path: "/api/bounties/{id}/refund",
+  path: "/api/bounties/:id/refund",
   tags: ["Bounties"],
   summary: "Refund a bounty",
   description:
@@ -208,6 +264,26 @@ registry.registerPath({
   responses: {
     200: bountyDataResponse("Bounty refunded."),
     400: errorResponse("Bounty not found, already finalised, maintainer mismatch, or validation failed."),
+  },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/bounties/:id/notes",
+  tags: ["Bounties"],
+  summary: "Update bounty notes",
+  description:
+    "Updates the maintainer notes for a bounty. " +
+    "Only the maintainer address recorded on the bounty may call this endpoint. " +
+    "Notes are limited to 2000 characters. " +
+    "Rate-limited to **5 requests per IP per minute**.",
+  request: {
+    params: z.object({ id: z.string().openapi(bountyIdParam.schema) }),
+    body: jsonBody(updateNotesSchema),
+  },
+  responses: {
+    200: bountyDataResponse("Notes updated successfully."),
+    400: errorResponse("Bounty not found, maintainer mismatch, or validation failed."),
   },
 });
 
@@ -247,6 +323,51 @@ registry.registerPath({
       "Top 10 contributors by XLM earned.",
       z.object({ data: z.array(leaderboardEntrySchema) }),
     ),
+  },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/audit-log",
+  tags: ["Admin"],
+  summary: "List all audit logs (admin-only)",
+  description:
+    "Admin-only endpoint that returns a paginated view of all audit log records. Requires a valid x-admin-api-key header.",
+  request: {
+    query: z.object({
+      limit: z.number().int().min(1).max(200).optional().openapi({
+        example: 50,
+        description: "Maximum number of log records to return (1-200, default 50)",
+      }),
+      offset: z.number().int().min(0).optional().openapi({
+        example: 0,
+        description: "Zero-based offset into the audit log list",
+      }),
+      actor: z.string().optional().openapi({
+        description: "Filter logs by actor (Stellar address)",
+        example: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+      }),
+      transition: z.string().optional().openapi({
+        description: "Filter logs by transition type",
+        example: "release",
+      }),
+      bountyId: z.string().optional().openapi({
+        description: "Filter logs by bounty ID",
+        example: "BNT-0001",
+      }),
+      fromStatus: z.string().optional().openapi({
+        description: "Filter logs by fromStatus",
+        example: "submitted",
+      }),
+      toStatus: z.string().optional().openapi({
+        description: "Filter logs by toStatus",
+        example: "released",
+      }),
+    }),
+  },
+  responses: {
+    200: jsonResponse("Paginated list of audit logs", bountyAuditLogListResponseSchema),
+    401: errorResponse("Invalid or missing x-admin-api-key header"),
   },
 });
 

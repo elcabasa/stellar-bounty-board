@@ -60,6 +60,319 @@ describe("API — health and listing", () => {
   });
 });
 
+describe("API — bounty list deadline filters", () => {
+  it("deadlineBefore and deadlineAfter accept ISO 8601 strings", async () => {
+    const app = await getApp();
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bounty = createRes.body.data;
+
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    const beforeRes = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineBefore: tomorrow.toISOString() })
+      .expect(200);
+    expect(beforeRes.body.data.some((b: any) => b.id === bounty.id)).toBe(true);
+
+    const afterRes = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineAfter: yesterday.toISOString() })
+      .expect(200);
+    expect(afterRes.body.data.some((b: any) => b.id === bounty.id)).toBe(true);
+  });
+
+  it("invalid date string returns 400", async () => {
+    const app = await getApp();
+    await request(app)
+      .get("/api/bounties")
+      .query({ deadlineBefore: "not-a-valid-date" })
+      .expect(400);
+  });
+
+  it("deadlineBefore filters correctly", async () => {
+    const app = await getApp();
+    const now = Math.floor(Date.now() / 1000);
+
+    // Create bounties with different deadlines
+    const bounty1 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 1 })
+        .expect(201)
+    ).body.data; // deadline at now + 1 day
+    const bounty2 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 30 })
+        .expect(201)
+    ).body.data; // deadline at now + 30 days
+
+    const filterDate = new Date((now + 2 * 24 * 60 * 60) * 1000).toISOString(); // 2 days from now
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineBefore: filterDate })
+      .expect(200);
+
+    expect(res.body.data.some((b: any) => b.id === bounty1.id)).toBe(true);
+    expect(res.body.data.some((b: any) => b.id === bounty2.id)).toBe(false);
+  });
+
+  it("deadlineAfter filters correctly", async () => {
+    const app = await getApp();
+    const now = Math.floor(Date.now() / 1000);
+
+    // Create bounties with different deadlines
+    const bounty1 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 1 })
+        .expect(201)
+    ).body.data; // deadline at now + 1 day
+    const bounty2 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 30 })
+        .expect(201)
+    ).body.data; // deadline at now + 30 days
+
+    const filterDate = new Date((now + 2 * 24 * 60 * 60) * 1000).toISOString(); // 2 days from now
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineAfter: filterDate })
+      .expect(200);
+
+    expect(res.body.data.some((b: any) => b.id === bounty1.id)).toBe(false);
+    expect(res.body.data.some((b: any) => b.id === bounty2.id)).toBe(true);
+  });
+
+  it("deadlineBefore and deadlineAfter combined with AND logic", async () => {
+    const app = await getApp();
+    const now = Math.floor(Date.now() / 1000);
+
+    // Create bounties with different deadlines
+    const bounty1 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 1 })
+        .expect(201)
+    ).body.data; // deadline at now + 1 day
+    const bounty2 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 10 })
+        .expect(201)
+    ).body.data; // deadline at now + 10 days
+    const bounty3 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 30 })
+        .expect(201)
+    ).body.data; // deadline at now + 30 days
+
+    const afterDate = new Date((now + 2 * 24 * 60 * 60) * 1000).toISOString(); // 2 days from now
+    const beforeDate = new Date((now + 20 * 24 * 60 * 60) * 1000).toISOString(); // 20 days from now
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineAfter: afterDate, deadlineBefore: beforeDate })
+      .expect(200);
+
+    expect(res.body.data.some((b: any) => b.id === bounty1.id)).toBe(false);
+    expect(res.body.data.some((b: any) => b.id === bounty2.id)).toBe(true);
+    expect(res.body.data.some((b: any) => b.id === bounty3.id)).toBe(false);
+  });
+
+  it("deadline filters combined with q filter", async () => {
+    const app = await getApp();
+    const now = Math.floor(Date.now() / 1000);
+
+    // Create bounties with different deadlines and titles
+    const bounty1 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 1, title: "Test bounty 1" })
+        .expect(201)
+    ).body.data;
+    const bounty2 = (
+      await request(app)
+        .post("/api/bounties")
+        .send({ ...validCreateBody, deadlineDays: 30, title: "Another test bounty" })
+        .expect(201)
+    ).body.data;
+
+    const filterDate = new Date((now + 2 * 24 * 60 * 60) * 1000).toISOString(); // 2 days from now
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ deadlineBefore: filterDate, q: "Test" })
+      .expect(200);
+
+    expect(res.body.data.some((b: any) => b.id === bounty1.id)).toBe(true);
+    expect(res.body.data.some((b: any) => b.id === bounty2.id)).toBe(false);
+  });
+});
+
+describe("API — bounty list contributor filter", () => {
+  it("filters bounties by exact contributor address", async () => {
+    const app = await getApp();
+    const created = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = created.body.data.id;
+
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    const matched = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    expect(matched.body.data.some((b: any) => b.id === bountyId)).toBe(true);
+  });
+
+  it("returns no bounties when no contributor matches", async () => {
+    const app = await getApp();
+    const created = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = created.body.data.id;
+
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    const matched = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: OTHER_ACCOUNT })
+      .expect(200);
+
+    expect(matched.body.data).toHaveLength(0);
+  });
+
+  it("rejects invalid contributor addresses", async () => {
+    const app = await getApp();
+
+    const res = await request(app)
+      .get("/api/bounties")
+      .query({ contributor: "not-a-valid-address" })
+      .expect(400);
+
+    expect(res.body.error).toMatch(/contributor|Stellar public key/i);
+  });
+});
+
+describe("API — admin audit log endpoint", () => {
+  it("GET /api/audit-log returns all audit logs", async () => {
+    const app = await getApp();
+    
+    // Create a bounty and go through full lifecycle to generate audit logs
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = createRes.body.data.id;
+    
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+    await request(app)
+      .post(`/api/bounties/${bountyId}/submit`)
+      .send({ 
+        contributor: CONTRIBUTOR, 
+        submissionUrl: "https://github.com/owner/repo/pull/1" 
+      })
+      .expect(200);
+    await request(app)
+      .post(`/api/bounties/${bountyId}/release`)
+      .send({ maintainer: MAINTAINER })
+      .expect(200);
+
+    const auditRes = await request(app).get("/api/audit-log").expect(200);
+    
+    expect(auditRes.body.data.length).toBe(3); // reserve, submit, release
+    expect(auditRes.body.pagination.total).toBe(3);
+  });
+
+  it("GET /api/audit-log filters by actor", async () => {
+    const app = await getApp();
+    
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = createRes.body.data.id;
+    
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+
+    const auditRes = await request(app)
+      .get("/api/audit-log")
+      .query({ actor: CONTRIBUTOR })
+      .expect(200);
+      
+    expect(auditRes.body.data.length).toBe(1);
+    expect(auditRes.body.data[0].actor).toBe(CONTRIBUTOR);
+  });
+
+  it("GET /api/audit-log filters by transition", async () => {
+    const app = await getApp();
+    
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = createRes.body.data.id;
+    
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+    await request(app)
+      .post(`/api/bounties/${bountyId}/submit`)
+      .send({ 
+        contributor: CONTRIBUTOR, 
+        submissionUrl: "https://github.com/owner/repo/pull/1" 
+      })
+      .expect(200);
+
+    const auditRes = await request(app)
+      .get("/api/audit-log")
+      .query({ transition: "reserve" })
+      .expect(200);
+      
+    expect(auditRes.body.data.length).toBe(1);
+    expect(auditRes.body.data[0].transition).toBe("reserve");
+  });
+
+  it("GET /api/audit-log uses combined filters", async () => {
+    const app = await getApp();
+    
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const bountyId = createRes.body.data.id;
+    
+    await request(app)
+      .post(`/api/bounties/${bountyId}/reserve`)
+      .send({ contributor: CONTRIBUTOR })
+      .expect(200);
+    await request(app)
+      .post(`/api/bounties/${bountyId}/submit`)
+      .send({ 
+        contributor: CONTRIBUTOR, 
+        submissionUrl: "https://github.com/owner/repo/pull/1" 
+      })
+      .expect(200);
+
+    const auditRes = await request(app)
+      .get("/api/audit-log")
+      .query({ 
+        actor: CONTRIBUTOR, 
+        transition: "submit",
+        fromStatus: "reserved",
+        toStatus: "submitted"
+      })
+      .expect(200);
+      
+    expect(auditRes.body.data.length).toBe(1);
+    expect(auditRes.body.data[0].actor).toBe(CONTRIBUTOR);
+    expect(auditRes.body.data[0].transition).toBe("submit");
+  });
+});
+
 describe("API — bounty lifecycle routes", () => {
   it("POST /api/bounties creates and GET lists it", async () => {
     const app = await getApp();

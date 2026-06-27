@@ -9,6 +9,7 @@ import { getMetrics, httpRequestDuration } from './metrics';
 
 import {
   createBounty,
+  disputeBounty,
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
@@ -22,17 +23,20 @@ import {
   getMaintainerMetrics,
   getGlobalMetrics,
   getLeaderboard,
-  listBountiesCached,
+  updateBountyNotes,
 } from './services/bountyStore';
 
 import {
   bountyIdSchema,
   createBountySchema,
+  disputeBountySchema,
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
+  updateNotesSchema,
   zodErrorMessage,
 } from './validation/schemas';
+import { isValidStellarAddress } from './utils';
 
 import {
   captureRawBody,
@@ -47,6 +51,7 @@ import { readLimiter, mutationLimiter } from './utils';
 import { logStructured } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
+import { draining } from './shutdown';
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
 
@@ -98,6 +103,14 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
 }
 
 export const app = express();
+
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  if (draining) {
+    res.setHeader('Connection', 'close');
+    return res.status(503).json({ error: 'Service unavailable — server is shutting down' });
+  }
+  next();
+});
 
 app.use(cors(buildCorsOptions()));
 
@@ -251,12 +264,22 @@ const healthHandler = (_req: Request, res: Response) => {
     service: 'stellar-bounty-board-api',
     status: 'ok',
     timestamp: new Date().toISOString(),
-
   });
 };
 
 app.get('/api/health', healthHandler);
-app.get('/api/health/deep', healthHandler);
+
+app.get('/api/health/deep', (_req: Request, res: Response) => {
+  const arbiterConfigured = Boolean(process.env.ARBITER_ADDRESS?.trim());
+  res.json({
+    service: 'stellar-bounty-board-api',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    components: {
+      arbiter: arbiterConfigured ? 'configured' : 'missing',
+    },
+  });
+});
 
 app.get('/worker/health', (_req: Request, res: Response) => {
   res.json({
@@ -267,8 +290,48 @@ app.get('/worker/health', (_req: Request, res: Response) => {
 });
 
 app.get('/api/bounties', async (req: Request, res: Response) => {
-  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
-  res.json({ data: await listBountiesCached({ q }) });
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+    const contributor =
+      typeof req.query.contributor === 'string' && req.query.contributor.trim()
+        ? req.query.contributor.trim()
+        : undefined;
+    const page = parsePaginationValue(req.query.page, 'page', 1, 1);
+    const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
+
+    let deadlineBefore: number | undefined;
+    if (typeof req.query.deadlineBefore === 'string') {
+      const date = new Date(req.query.deadlineBefore);
+      if (isNaN(date.getTime())) {
+        throw new Error('deadlineBefore must be a valid ISO 8601 date string');
+      }
+      deadlineBefore = Math.floor(date.getTime() / 1000);
+    }
+
+    let deadlineAfter: number | undefined;
+    if (typeof req.query.deadlineAfter === 'string') {
+      const date = new Date(req.query.deadlineAfter);
+      if (isNaN(date.getTime())) {
+        throw new Error('deadlineAfter must be a valid ISO 8601 date string');
+      }
+      deadlineAfter = Math.floor(date.getTime() / 1000);
+    }
+
+    if (contributor && !isValidStellarAddress(contributor)) {
+      throw new Error('contributor must be a valid Stellar public key');
+    }
+
+    const all = await listBountiesCached({ q, contributor, deadlineBefore, deadlineAfter });
+    const total = all.length;
+    const start = (page - 1) * pageSize;
+    const data = all.slice(start, start + pageSize);
+    const hasMore = start + data.length < total;
+
+    res.setHeader('X-Total-Count', String(total));
+    res.json({ data, total, page, pageSize, hasMore });
+  } catch (error) {
+    sendError(res, req, error);
+  }
 });
 
 app.get('/api/leaderboard', (req: Request, res: Response) => {
@@ -513,6 +576,58 @@ app.post(
 );
 
 app.post(
+  '/api/bounties/:id/dispute',
+  mutationLimiter,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = disputeBountySchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await disputeBounty(
+        parseId(req.params.id),
+        parsedBody.data.contributor,
+        parsedBody.data.reason
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.patch(
+  '/api/bounties/:id/notes',
+  mutationLimiter,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = updateNotesSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await updateBountyNotes(
+        parseId(req.params.id),
+        parsedBody.data.maintainer,
+        parsedBody.data.notes
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
   '/api/webhooks/github',
   createGitHubWebhookSignatureMiddleware(() => process.env.GITHUB_WEBHOOK_SECRET),
   async (req: Request, res: Response) => {
@@ -614,7 +729,22 @@ app.get(
     try {
       const limit = parsePaginationValue(req.query.limit, "limit", 50, 1, 200);
       const offset = parsePaginationValue(req.query.offset, "offset", 0, 0);
-      const page = listAllAuditLogs({ limit, offset });
+      
+      const actor = typeof req.query.actor === "string" ? req.query.actor : undefined;
+      const transition = typeof req.query.transition === "string" ? req.query.transition : undefined;
+      const bountyId = typeof req.query.bountyId === "string" ? req.query.bountyId : undefined;
+      const fromStatus = typeof req.query.fromStatus === "string" ? req.query.fromStatus : undefined;
+      const toStatus = typeof req.query.toStatus === "string" ? req.query.toStatus : undefined;
+      
+      const page = listAllAuditLogs({ 
+        limit, 
+        offset, 
+        actor, 
+        transition, 
+        bountyId, 
+        fromStatus, 
+        toStatus 
+      });
       res.json(page);
     } catch (error) {
       sendError(res, req, error);

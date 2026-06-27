@@ -127,6 +127,23 @@ export const submitBountySchema = z
   })
   .openapi('SubmitBountyRequest');
 
+export const disputeBountySchema = z
+  .object({
+    contributor: stellarAccountSchema.openapi({
+      description: 'Stellar public key of the contributor disputing the bounty.',
+    }),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'Reason is required.')
+      .max(500, 'Reason must be at most 500 characters.')
+      .openapi({
+        example: 'The submitted solution was not reviewed within the agreed timeframe.',
+        description: 'Reason for disputing the bounty (1–500 chars).',
+      }),
+  })
+  .openapi('DisputeBountyRequest');
+
 export const maintainerActionSchema = z
   .object({
     maintainer: stellarAccountSchema.openapi({
@@ -143,6 +160,22 @@ export const maintainerActionSchema = z
       }),
   })
   .openapi('MaintainerActionRequest');
+
+export const updateNotesSchema = z
+  .object({
+    maintainer: stellarAccountSchema.openapi({
+      description: 'Must match the maintainer address on the bounty.',
+    }),
+    notes: z
+      .string()
+      .trim()
+      .max(2000, 'Notes must be at most 2000 characters.')
+      .openapi({
+        example: 'Added additional details about the bounty requirements.',
+        description: 'Maintainer notes for the bounty (max 2000 characters).',
+      }),
+  })
+  .openapi('UpdateNotesRequest');
 
 // ---------------------------------------------------------------------------
 // Shared response schemas
@@ -225,7 +258,7 @@ export const bountyAuditLogSchema = z
       .enum(['open', 'reserved', 'submitted', 'released', 'refunded', 'expired'])
       .openapi({ example: 'reserved' }),
     transition: z
-      .enum(['reserve', 'submit', 'release', 'refund', 'expire'])
+      .enum(['reserve', 'submit', 'release', 'refund', 'expire', 'dispute', 'update_notes'])
       .openapi({ example: 'reserve' }),
     actor: z.string().openapi({ example: STELLAR_EXAMPLE }),
     timestamp: z
