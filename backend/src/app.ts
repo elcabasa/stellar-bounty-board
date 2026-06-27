@@ -51,6 +51,7 @@ import { readLimiter, mutationLimiter } from './utils';
 import { logStructured } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
+import { draining } from './shutdown';
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
 
@@ -102,6 +103,14 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
 }
 
 export const app = express();
+
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  if (draining) {
+    res.setHeader('Connection', 'close');
+    return res.status(503).json({ error: 'Service unavailable — server is shutting down' });
+  }
+  next();
+});
 
 app.use(cors(buildCorsOptions()));
 
