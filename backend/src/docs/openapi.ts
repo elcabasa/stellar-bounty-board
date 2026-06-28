@@ -112,7 +112,7 @@ registry.registerPath({
   tags: ["Bounties"],
   summary: "List all bounties",
   description:
-    "Returns every bounty record sorted by creation date (newest first). " +
+    "Returns bounty records sorted by `createdAt` descending by default, with optional maintainer/status/token filters and sort parameters. " +
     "Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
   request: {
     query: z.object({
@@ -121,6 +121,21 @@ registry.registerPath({
       }),
       contributor: z.string().optional().openapi({
         description: "Exact Stellar public key filter applied to the bounty contributor.",
+      }),
+      maintainer: z.string().optional().openapi({
+        description: "Exact Stellar public key filter applied to the bounty maintainer.",
+      }),
+      status: z.string().optional().openapi({
+        description: "Exact bounty status filter. Combines with maintainer and tokenSymbol using AND logic.",
+      }),
+      tokenSymbol: z.string().optional().openapi({
+        description: "Exact token symbol filter. Combines with maintainer and status using AND logic.",
+      }),
+      sort: z.enum(["amount", "deadline", "createdAt", "status"]).optional().openapi({
+        description: "Field to sort by (default: createdAt).",
+      }),
+      order: z.enum(["asc", "desc"]).optional().openapi({
+        description: "Sort direction (default: desc).",
       }),
       deadlineBefore: z.string().optional().openapi({
         description: "Filter bounties with deadline before this ISO 8601 date string.",
@@ -140,7 +155,7 @@ registry.registerPath({
   },
   responses: {
     200: jsonResponse("Array of all bounty records.", z.object({ data: z.array(bountyRecordSchema) })),
-    400: errorResponse("Invalid query parameters (e.g., invalid date string)."),
+    400: errorResponse("Invalid query parameters (e.g., invalid date string, maintainer address, sort field, or order)."),
   },
 });
 

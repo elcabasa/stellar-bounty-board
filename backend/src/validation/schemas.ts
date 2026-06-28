@@ -2,11 +2,21 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
 import { isValidStellarAddress } from '../utils';
+import { githubPrUrlSchema } from './prUrl';
 
 extendZodWithOpenApi(z);
 
 const REPO_REGEX = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const TOKEN_REGEX = /^[A-Za-z0-9]{1,12}$/;
+const DEFAULT_ALLOWED_TOKEN_SYMBOLS = ['XLM', 'USDC'];
+
+export function getAllowedTokenSymbols(): string[] {
+  const configured = process.env.ALLOWED_TOKEN_SYMBOLS?.split(',')
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean);
+
+  return configured && configured.length > 0 ? configured : DEFAULT_ALLOWED_TOKEN_SYMBOLS;
+}
 
 const STELLAR_EXAMPLE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 const TX_HASH_REGEX = /^[0-9a-fA-F]{64}$/;
@@ -59,6 +69,16 @@ export const createBountySchema = z
       .string()
       .trim()
       .regex(TOKEN_REGEX, 'Token symbol must be 1-12 letters or numbers.')
+      .transform((symbol) => symbol.toUpperCase())
+      .superRefine((symbol, ctx) => {
+        const allowed = getAllowedTokenSymbols();
+        if (!allowed.includes(symbol)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Unsupported token symbol. Allowed values: ${allowed.join(', ')}`,
+          });
+        }
+      })
       .openapi({
         example: 'XLM',
         description: 'Stellar token symbol for payout (1–12 alphanumeric chars).',
@@ -112,9 +132,10 @@ export const submitBountySchema = z
     contributor: stellarAccountSchema.openapi({
       description: 'Must match the contributor who reserved the bounty.',
     }),
-
-
-
+    submissionUrl: githubPrUrlSchema.openapi({
+      example: 'https://github.com/owner/repo/pull/99',
+      description: 'GitHub pull request URL for the submitted solution.',
+    }),
     notes: z
       .string()
       .trim()

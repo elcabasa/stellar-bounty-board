@@ -295,6 +295,17 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
       typeof req.query.contributor === 'string' && req.query.contributor.trim()
         ? req.query.contributor.trim()
         : undefined;
+    const maintainer =
+      typeof req.query.maintainer === 'string' && req.query.maintainer.trim()
+        ? req.query.maintainer.trim()
+        : undefined;
+    const status = typeof req.query.status === 'string' && req.query.status.trim() ? req.query.status.trim() : undefined;
+    const tokenSymbol =
+      typeof req.query.tokenSymbol === 'string' && req.query.tokenSymbol.trim()
+        ? req.query.tokenSymbol.trim()
+        : undefined;
+    const sort = typeof req.query.sort === 'string' && req.query.sort.trim() ? req.query.sort.trim() : 'createdAt';
+    const order = typeof req.query.order === 'string' && req.query.order.trim() ? req.query.order.trim() : 'desc';
     const page = parsePaginationValue(req.query.page, 'page', 1, 1);
     const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
 
@@ -319,8 +330,27 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
     if (contributor && !isValidStellarAddress(contributor)) {
       throw new Error('contributor must be a valid Stellar public key');
     }
+    if (maintainer && !isValidStellarAddress(maintainer)) {
+      throw new Error('maintainer must be a valid Stellar public key');
+    }
+    if (!['amount', 'deadline', 'createdAt', 'status'].includes(sort)) {
+      throw new Error('sort must be one of: amount, deadline, createdAt, status');
+    }
+    if (!['asc', 'desc'].includes(order)) {
+      throw new Error('order must be one of: asc, desc');
+    }
 
-    const all = await listBountiesCached({ q, contributor, deadlineBefore, deadlineAfter });
+    const all = await listBountiesCached({
+      q,
+      contributor,
+      maintainer,
+      status: status as never,
+      tokenSymbol,
+      deadlineBefore,
+      deadlineAfter,
+      sort: sort as never,
+      order: order as never,
+    });
     const total = all.length;
     const start = (page - 1) * pageSize;
     const data = all.slice(start, start + pageSize);
