@@ -131,7 +131,6 @@ export default function ContributorDashboard({
         recommendations={recommendations}
         loading={loading && isConnected}
         walletConnected={isConnected}
-        onConnectWallet={connect}
       />
     </div>
   );

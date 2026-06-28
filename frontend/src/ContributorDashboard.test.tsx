@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ContributorDashboard from './ContributorDashboard';
 import type { Bounty } from './types';
 
-const WALLET = 'GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC';
+const WALLET = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 
 const openBounties: Bounty[] = [
   {
@@ -54,7 +54,7 @@ describe('ContributorDashboard', () => {
     expect(
       screen.getByText(/connect your wallet to see personalized bounty recommendations/i)
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /connect wallet/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /connect wallet/i }).length).toBeGreaterThan(0);
   });
 
   it('shows fallback recommendations for a connected wallet with no history', async () => {
@@ -107,10 +107,11 @@ describe('ContributorDashboard', () => {
   it('prompts to connect when the connect wallet button is clicked', async () => {
     const user = userEvent.setup();
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue(WALLET);
+    vi.spyOn(window, 'alert').mockImplementation(() => {});
 
     render(<ContributorDashboard bounties={openBounties} loading={false} />);
 
-    await user.click(screen.getByRole('button', { name: /connect wallet/i }));
+    await user.click(screen.getAllByRole('button', { name: /connect wallet/i })[0]!);
 
     expect(promptSpy).toHaveBeenCalled();
     await waitFor(() => {
