@@ -69,14 +69,23 @@ Set the arbiter's Stellar public key in your environment before starting the bac
 ARBITER_ADDRESS=G...your_arbiter_stellar_public_key...
 ```
 
-Verify it is recognised by the running server:
+Verify dependency health with the deep check:
 
 ```bash
 curl http://localhost:3001/api/health/deep
-# { "components": { "arbiter": "configured" } }
+# {
+#   "overall": "up",
+#   "components": {
+#     "store": "up",
+#     "soroban": "up",
+#     "contract": "up",
+#     "auth": "up"
+#   },
+#   "timestamp": "2026-06-28T12:00:00.000Z"
+# }
 ```
 
-If `arbiter` is `"missing"`, the dispute flow will fail at the contract level.
+If any component is `"down"`, the endpoint returns HTTP 503. Set `MAINTAINER_PUBLIC_KEY`, `ARBITER_ADDRESS`, and `SOROBAN_CONTRACT_ID` in your environment, and ensure the Soroban RPC URL is reachable.
 
 ### Dispute lifecycle
 
@@ -111,6 +120,7 @@ Base URL:
 Routes:
 
 - `GET /api/health`
+- `GET /api/health/deep` — dependency-aware readiness check (returns 503 if any component is down)
 - `GET /api/bounties`
 - `POST /api/bounties`
 - `POST /api/bounties/:id/reserve`

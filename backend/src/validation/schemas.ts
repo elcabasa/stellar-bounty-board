@@ -301,9 +301,26 @@ export const bountyAuditLogListResponseSchema = z
 
 export const healthResponseSchema = z
   .object({
-
+    service: z.string(),
+    status: z.string(),
+    timestamp: z.string(),
   })
   .openapi('HealthResponse');
+
+export const componentStatusSchema = z.enum(['up', 'down']);
+
+export const deepHealthResponseSchema = z
+  .object({
+    overall: componentStatusSchema,
+    components: z.object({
+      store: componentStatusSchema,
+      soroban: componentStatusSchema,
+      contract: componentStatusSchema,
+      auth: componentStatusSchema,
+    }),
+    timestamp: z.string(),
+  })
+  .openapi('DeepHealthResponse');
 
 export function zodErrorMessage(error: z.ZodError): string {
   return error.issues

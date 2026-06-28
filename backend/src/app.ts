@@ -53,6 +53,8 @@ import { logStructured } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 import { draining } from './shutdown';
+import { runDeepHealthCheck } from './services/deepHealth';
+import { listOpenIssues } from './services/openIssues';
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
 
@@ -122,6 +124,31 @@ app.use(
 );
 
 app.use(requestContextMiddleware);
+
+const healthHandler = (_req: Request, res: Response) => {
+  res.json({
+    service: 'stellar-bounty-board-api',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+};
+
+app.get('/api/health', healthHandler);
+
+app.get('/api/health/deep', async (_req: Request, res: Response) => {
+  const result = await runDeepHealthCheck();
+  const statusCode = result.overall === 'up' ? 200 : 503;
+  res.status(statusCode).json(result);
+});
+
+app.get('/worker/health', (_req: Request, res: Response) => {
+  res.json({
+    service: 'stellar-bounty-board-worker',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use(readLimiter);
 
 const swaggerDoc = generateOpenApiDocument();
@@ -257,36 +284,6 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   ].join('\n');
 
   res.type('application/xml').send(xml);
-});
-
-const healthHandler = (_req: Request, res: Response) => {
-  res.json({
-    service: 'stellar-bounty-board-api',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-};
-
-app.get('/api/health', healthHandler);
-
-app.get('/api/health/deep', (_req: Request, res: Response) => {
-  const arbiterConfigured = Boolean(process.env.ARBITER_ADDRESS?.trim());
-  res.json({
-    service: 'stellar-bounty-board-api',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    components: {
-      arbiter: arbiterConfigured ? 'configured' : 'missing',
-    },
-  });
-});
-
-app.get('/worker/health', (_req: Request, res: Response) => {
-  res.json({
-    service: 'stellar-bounty-board-worker',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
 });
 
 app.get('/api/bounties', async (req: Request, res: Response) => {
@@ -651,7 +648,13 @@ app.post(
 );
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
-
+  try {
+    const data = await listOpenIssues();
+    res.setHeader('Cache-Control', 'max-age=600');
+    res.json({ data });
+  } catch (error) {
+    sendError(res, _req, error, 500);
+  }
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {

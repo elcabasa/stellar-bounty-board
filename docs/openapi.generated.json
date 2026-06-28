@@ -322,8 +322,7 @@
           },
           "maintainer": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
-            "description": "A valid Stellar public key (starts with G, 56 characters).",
+            "description": "A valid Stellar public key (starts with G, 56 characters, checksum verified).",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
           "tokenSymbol": {
@@ -334,10 +333,9 @@
           },
           "amount": {
             "type": "number",
-            "minimum": 1,
-            "maximum": 10000,
-            "description": "Bounty amount in XLM (1-10000, up to 7 decimal places).",
-            "example": 100
+            "exclusiveMinimum": 0,
+            "description": "Payout amount in the selected token.",
+            "example": 42.5
           },
           "deadlineDays": {
             "type": "integer",
@@ -384,7 +382,6 @@
         "properties": {
           "contributor": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Stellar public key of the contributor reserving the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
@@ -403,15 +400,8 @@
         "properties": {
           "contributor": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Must match the contributor who reserved the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
-          },
-          "submissionUrl": {
-            "type": "string",
-            "pattern": "^https:\\/\\/github\\.com\\/[a-zA-Z0-9_.-]+\\/[a-zA-Z0-9_.-]+\\/pull\\/\\d+$",
-            "description": "Link to the GitHub pull request.",
-            "example": "https://github.com/owner/repo/pull/99"
           },
           "notes": {
             "type": "string",
@@ -421,8 +411,7 @@
           }
         },
         "required": [
-          "contributor",
-          "submissionUrl"
+          "contributor"
         ]
       },
       "MaintainerActionRequest": {
@@ -430,7 +419,6 @@
         "properties": {
           "maintainer": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Must match the maintainer address on the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
@@ -443,6 +431,26 @@
         },
         "required": [
           "maintainer"
+        ]
+      },
+      "UpdateNotesRequest": {
+        "type": "object",
+        "properties": {
+          "maintainer": {
+            "type": "string",
+            "description": "Must match the maintainer address on the bounty.",
+            "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000,
+            "description": "Maintainer notes for the bounty (max 2000 characters).",
+            "example": "Added additional details about the bounty requirements."
+          }
+        },
+        "required": [
+          "maintainer",
+          "notes"
         ]
       },
       "ErrorResponse": {
@@ -504,22 +512,103 @@
         "type": "object",
         "properties": {
           "service": {
-            "type": "string",
-            "example": "stellar-bounty-board-backend"
+            "type": "string"
           },
           "status": {
-            "type": "string",
-            "example": "ok"
+            "type": "string"
           },
           "timestamp": {
-            "type": "string",
-            "example": "2026-03-24T19:00:00.000Z"
+            "type": "string"
           }
         },
         "required": [
           "service",
           "status",
           "timestamp"
+        ]
+      },
+      "DeepHealthResponse": {
+        "type": "object",
+        "properties": {
+          "overall": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "components": {
+            "type": "object",
+            "properties": {
+              "store": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "soroban": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "contract": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              },
+              "auth": {
+                "type": "string",
+                "enum": [
+                  "up",
+                  "down"
+                ]
+              }
+            },
+            "required": [
+              "store",
+              "soroban",
+              "contract",
+              "auth"
+            ]
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "overall",
+          "components",
+          "timestamp"
+        ]
+      },
+      "LeaderboardEntry": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Contributor Stellar address.",
+            "example": "GBBB...BBB"
+          },
+          "totalXlm": {
+            "type": "number",
+            "description": "Total XLM received from released bounties.",
+            "example": 350.5
+          },
+          "bountiesCompleted": {
+            "type": "integer",
+            "description": "Number of released bounties completed.",
+            "example": 3
+          }
+        },
+        "required": [
+          "address",
+          "totalXlm",
+          "bountiesCompleted"
         ]
       }
     },
@@ -539,15 +628,38 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/HealthResponse"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health/deep": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Deep health check",
+        "description": "Extended health check that verifies all external dependencies. Checks JSON store read/write, Soroban RPC reachability, contract ID configuration, and auth configuration (MAINTAINER_PUBLIC_KEY and ARBITER_ADDRESS). Excluded from rate limiting. Returns HTTP 503 when any critical component is down.",
+        "responses": {
+          "200": {
+            "description": "All critical components are healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepHealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more critical components are down.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeepHealthResponse"
                 }
               }
             }
@@ -564,57 +676,63 @@
         "description": "Returns every bounty record sorted by creation date (newest first). Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
         "parameters": [
           {
+            "schema": {
+              "type": "string",
+              "description": "Case-insensitive substring filter applied to title, summary, and labels."
+            },
+            "required": false,
             "name": "q",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Case-insensitive substring filter applied to title, summary, and labels."
+            "in": "query"
           },
           {
+            "schema": {
+              "type": "string",
+              "description": "Exact Stellar public key filter applied to the bounty contributor."
+            },
+            "required": false,
             "name": "contributor",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Exact Stellar public key filter applied to the bounty contributor."
+            "in": "query"
           },
           {
+            "schema": {
+              "type": "string",
+              "description": "Filter bounties with deadline before this ISO 8601 date string.",
+              "example": "2026-07-28T19:20:12.196Z"
+            },
+            "required": false,
             "name": "deadlineBefore",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter bounties with deadline before this ISO 8601 date string.",
-            "example": "2026-07-26T19:13:30.142Z"
+            "in": "query"
           },
           {
+            "schema": {
+              "type": "string",
+              "description": "Filter bounties with deadline after this ISO 8601 date string.",
+              "example": "2026-06-28T19:20:12.200Z"
+            },
+            "required": false,
             "name": "deadlineAfter",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "description": "Filter bounties with deadline after this ISO 8601 date string.",
-            "example": "2026-06-26T19:13:30.142Z"
+            "in": "query"
           },
           {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Page number (starts at 1, default 1)."
-          },
-          {
-            "name": "pageSize",
-            "in": "query",
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100
+              "description": "Page number (starts at 1, default 1)."
             },
-            "description": "Number of items per page (max 100, default 20)."
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Number of items per page (max 100, default 20)."
+            },
+            "required": false,
+            "name": "pageSize",
+            "in": "query"
           }
         ],
         "responses": {
@@ -635,6 +753,16 @@
                   "required": [
                     "data"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters (e.g., invalid date string).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -934,7 +1062,7 @@
         }
       }
     },
-    "/api/bounties/{id}/refund": {
+    "/api/bounties/:id/refund": {
       "post": {
         "tags": [
           "Bounties"
@@ -994,7 +1122,7 @@
         }
       }
     },
-    "/api/bounties/{id}/cancel": {
+    "/api/bounties/:id/cancel": {
       "post": {
         "tags": [
           "Bounties"
@@ -1054,6 +1182,66 @@
         }
       }
     },
+    "/api/bounties/:id/notes": {
+      "patch": {
+        "tags": [
+          "Bounties"
+        ],
+        "summary": "Update bounty notes",
+        "description": "Updates the maintainer notes for a bounty. Only the maintainer address recorded on the bounty may call this endpoint. Notes are limited to 2000 characters. Rate-limited to **5 requests per IP per minute**.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "BNT-0001"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Notes updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BountyRecord"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bounty not found, maintainer mismatch, or validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/open-issues": {
       "get": {
         "tags": [
@@ -1079,6 +1267,144 @@
                   "required": [
                     "data"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "tags": [
+          "Leaderboard"
+        ],
+        "summary": "Contributor leaderboard",
+        "description": "Returns the top 10 contributors ranked by total XLM received from released bounties. Ties are broken by the number of bounties completed. Returns an empty array when no bounties have been released yet.",
+        "responses": {
+          "200": {
+            "description": "Top 10 contributors by XLM earned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LeaderboardEntry"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/audit-log": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List all audit logs (admin-only)",
+        "description": "Admin-only endpoint that returns a paginated view of all audit log records. Requires a valid x-admin-api-key header.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "description": "Maximum number of log records to return (1-200, default 50)",
+              "example": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Zero-based offset into the audit log list",
+              "example": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter logs by actor (Stellar address)",
+              "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
+            },
+            "required": false,
+            "name": "actor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter logs by transition type",
+              "example": "release"
+            },
+            "required": false,
+            "name": "transition",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter logs by bounty ID",
+              "example": "BNT-0001"
+            },
+            "required": false,
+            "name": "bountyId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter logs by fromStatus",
+              "example": "submitted"
+            },
+            "required": false,
+            "name": "fromStatus",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter logs by toStatus",
+              "example": "released"
+            },
+            "required": false,
+            "name": "toStatus",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BountyAuditLogListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing x-admin-api-key header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

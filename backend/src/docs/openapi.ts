@@ -8,6 +8,7 @@ import {
   createBountySchema,
   errorResponseSchema,
   healthResponseSchema,
+  deepHealthResponseSchema,
   maintainerActionSchema,
   openIssueSchema,
   reserveBountySchema,
@@ -32,6 +33,7 @@ registry.register("UpdateNotesRequest", updateNotesSchema);
 registry.register("ErrorResponse", errorResponseSchema);
 registry.register("OpenIssue", openIssueSchema);
 registry.register("HealthResponse", healthResponseSchema);
+registry.register("DeepHealthResponse", deepHealthResponseSchema);
 
 // ---------------------------------------------------------------------------
 // Reusable inline helpers
@@ -73,7 +75,7 @@ registry.registerPath({
   summary: "Health check",
   description: "Returns the service name and current server timestamp. Use this to verify the API is reachable.",
   responses: {
-    200: jsonResponse("Service is healthy.", z.object({ data: healthResponseSchema })),
+    200: jsonResponse("Service is healthy.", healthResponseSchema),
   },
 });
 
@@ -83,26 +85,13 @@ registry.registerPath({
   tags: ["System"],
   summary: "Deep health check",
   description:
-    "Extended health check that verifies critical configuration is in place. " +
-    "Returns component-level status including whether the arbiter address is configured. " +
-    "The arbiter is a trusted Stellar account that mediates bounty disputes: when a maintainer " +
-    "raises a dispute, only the configured arbiter may call `dispute_bounty` on the Soroban contract " +
-    "to resolve it in favour of either the contributor or the maintainer. " +
-    "If `components.arbiter` is `\"missing\"`, set `ARBITER_ADDRESS` in your environment.",
+    "Extended health check that verifies all external dependencies. " +
+    "Checks JSON store read/write, Soroban RPC reachability, contract ID configuration, " +
+    "and auth configuration (MAINTAINER_PUBLIC_KEY and ARBITER_ADDRESS). " +
+    "Excluded from rate limiting. Returns HTTP 503 when any critical component is down.",
   responses: {
-    200: jsonResponse(
-      "Service is healthy with component details.",
-      z.object({
-        service: z.string(),
-        status: z.string(),
-        timestamp: z.string(),
-        components: z.object({
-          arbiter: z.enum(["configured", "missing"]).openapi({
-            description: "Whether ARBITER_ADDRESS is set in the server environment.",
-          }),
-        }),
-      }),
-    ),
+    200: jsonResponse("All critical components are healthy.", deepHealthResponseSchema),
+    503: jsonResponse("One or more critical components are down.", deepHealthResponseSchema),
   },
 });
 
