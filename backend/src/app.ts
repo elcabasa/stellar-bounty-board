@@ -49,7 +49,7 @@ import {
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
 import { readLimiter, mutationLimiter } from './utils';
-import { logStructured } from './logger';
+import { logStructured, logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 import { draining } from './shutdown';
@@ -75,6 +75,7 @@ function resolveRequestId(req: Request): string {
 function requestContextMiddleware(req: Request, res: Response, next: NextFunction): void {
   const requestId = resolveRequestId(req);
   req.requestId = requestId;
+  req.log = logger.child({ requestId });
   res.setHeader('X-Request-ID', requestId);
 
   const start = process.hrtime.bigint();
@@ -93,13 +94,15 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
       durationSec
     );
 
-    logStructured('info', 'http_request', {
-      requestId,
-      method: req.method,
-      path: req.path || '/',
-      status: res.statusCode,
-      durationMs: Math.round(durationMs * 1000) / 1000,
-    });
+    req.log.info(
+      {
+        method: req.method,
+        path: req.path || '/',
+        status: res.statusCode,
+        durationMs: Math.round(durationMs * 1000) / 1000,
+      },
+      'http_request'
+    );
   });
 
   next();
@@ -284,6 +287,37 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   ].join('\n');
 
   res.type('application/xml').send(xml);
+});
+
+app.get('/api/bounties/by-issue', (req: Request, res: Response) => {
+  const repo = req.query.repo;
+  const issueStr = req.query.issue;
+
+  if (!repo || !issueStr) {
+    return res.status(400).json({ error: 'Missing required query parameters: repo and issue' });
+  }
+
+  if (typeof repo !== 'string' || typeof issueStr !== 'string') {
+    return res.status(400).json({ error: 'Invalid query parameter types' });
+  }
+
+  const issueNumber = parseInt(issueStr, 10);
+  if (isNaN(issueNumber)) {
+    return res.status(400).json({ error: 'Issue parameter must be a valid number' });
+  }
+
+  const bounties = listBounties();
+  const found = bounties.find(
+    (b) => b.repo.toLowerCase() === repo.toLowerCase() && b.issueNumber === issueNumber
+  );
+
+  if (!found) {
+    return res.status(404).json({
+      error: `Bounty not found for repository ${repo} and issue #${issueNumber}`,
+    });
+  }
+
+  return res.json({ data: found });
 });
 
 app.get('/api/bounties', async (req: Request, res: Response) => {

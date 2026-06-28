@@ -827,3 +827,35 @@ describe("GET /api/leaderboard", () => {
     expect(entry).toHaveProperty("bountiesCompleted");
   });
 });
+
+describe("GET /api/bounties/by-issue", () => {
+  it("returns 400 when query parameters are missing", async () => {
+    const app = await getApp();
+    const res1 = await request(app).get("/api/bounties/by-issue?repo=owner/repo").expect(400);
+    expect(res1.body.error).toContain("Missing required query parameters");
+
+    const res2 = await request(app).get("/api/bounties/by-issue?issue=41").expect(400);
+    expect(res2.body.error).toContain("Missing required query parameters");
+  });
+
+  it("returns 404 when bounty is not found", async () => {
+    const app = await getApp();
+    const res = await request(app).get("/api/bounties/by-issue?repo=nonexistent/repo&issue=999").expect(404);
+    expect(res.body.error).toContain("Bounty not found");
+  });
+
+  it("returns 200 with the bounty when found", async () => {
+    const app = await getApp();
+    const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const repo = created.data.repo;
+    const issueNumber = created.data.issueNumber;
+
+    const res = await request(app)
+      .get(`/api/bounties/by-issue?repo=${repo}&issue=${issueNumber}`)
+      .expect(200);
+
+    expect(res.body.data.id).toBe(created.data.id);
+    expect(res.body.data.repo).toBe(repo);
+    expect(res.body.data.issueNumber).toBe(issueNumber);
+  });
+});

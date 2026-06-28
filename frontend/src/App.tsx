@@ -145,6 +145,19 @@ const BountyAmount = memo(function BountyAmount({
   useEffect(() => {
     let active = true;
 
+    if (bounty.tokenSymbol.toUpperCase() === "USDC") {
+      const formatted = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(bounty.amount);
+      setUsdAmount(formatted);
+      return () => {
+        active = false;
+      };
+    }
+
     if (bounty.tokenSymbol.toUpperCase() !== "XLM") {
       setUsdAmount(null);
       return () => {
