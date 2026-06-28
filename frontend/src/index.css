@@ -1098,6 +1098,94 @@ select {
   line-height: 1.55;
 }
 
+.github-issue-card--loading {
+  pointer-events: none;
+}
+
+.github-issue-card__skeleton-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.github-issue-card__skeleton-repo {
+  width: 180px;
+  height: 12px;
+}
+
+.github-issue-card__skeleton-number {
+  width: 48px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.github-issue-card__skeleton-cta {
+  width: 120px;
+  height: 16px;
+}
+
+.github-issue-card__skeleton-title {
+  display: block;
+  width: 85%;
+  height: 20px;
+}
+
+.github-issue-card__skeleton-chip {
+  width: 72px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.github-issue-card__state {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.github-issue-card__state--open {
+  background: rgba(13, 71, 54, 0.12);
+  color: #0d4736;
+}
+
+.github-issue-card__state--closed {
+  background: rgba(112, 87, 255, 0.14);
+  color: #5b21b6;
+}
+
+.github-issue-card__opened {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.github-issue-card__error {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.github-issue-card__error p {
+  margin: 0;
+}
+
+.github-issue-card__rate-limit {
+  font-size: 0.9rem;
+}
+
+.github-issue-card__error-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #0d4736;
+  font-weight: 600;
+  width: fit-content;
+}
+
 .bounty-card__top,
 .issue-card__top,
 .github-issue-card__top,
@@ -1766,6 +1854,115 @@ select {
 /* ---- End submission checklist modal ---- */
 
 /* ── Skill-tag filter row (recommendations panel, #75) ────────────────── */
+
+.contributor-dashboard {
+  display: grid;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.contributor-dashboard__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.contributor-dashboard__wallet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.contributor-dashboard__metrics {
+  margin-bottom: 0;
+}
+
+.wallet-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(30, 189, 147, 0.12);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.85rem;
+}
+
+.recommendations-panel {
+  margin-top: 0;
+}
+
+.bounty-card--recommended {
+  border-color: rgba(30, 189, 147, 0.35);
+  box-shadow: 0 12px 30px rgba(30, 189, 147, 0.08);
+}
+
+.bounty-card__recommended-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.recommendation-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(30, 189, 147, 0.12);
+  color: #0d4736;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.recommendation-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reason-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(54, 63, 59, 0.08);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.recommendation-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.recommendation-explanation {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.recommendations-footer {
+  margin-top: 16px;
+}
+
+.recommendations-disclaimer {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
 
 .tag-filter-row {
   display: flex;

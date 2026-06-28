@@ -652,6 +652,34 @@ describe("API — bounty lifecycle routes", () => {
     expect(ref.body.data.refundedTxHash).toBe("b".repeat(64));
   });
 
+  it("POST /api/bounties/:id/cancel returns canceled bounty", async () => {
+    const app = await getApp();
+    const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const id = created.data.id as string;
+
+    const res = await request(app)
+      .post(`/api/bounties/${id}/cancel`)
+      .send({ maintainer: MAINTAINER, transactionHash: "c".repeat(64) })
+      .expect(200);
+    expect(res.body.data.status).toBe("refunded");
+    expect(res.body.data.canceledAt).toBeDefined();
+    expect(res.body.data.canceledTxHash).toBe("c".repeat(64));
+  });
+
+  it("POST /api/bounties/:id/cancel rejects reserved bounty", async () => {
+    const app = await getApp();
+    const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const id = created.data.id as string;
+
+    await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
+
+    const res = await request(app)
+      .post(`/api/bounties/${id}/cancel`)
+      .send({ maintainer: MAINTAINER })
+      .expect(400);
+    expect(res.body.error).toMatch(/only open bounties/i);
+  });
+
   it("invalid reserve body returns 400", async () => {
     const app = await getApp();
     const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);

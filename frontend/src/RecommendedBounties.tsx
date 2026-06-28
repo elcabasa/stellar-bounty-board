@@ -7,6 +7,8 @@ import UsdAmount from './UsdAmount';
 interface RecommendedBountiesProps {
   recommendations: BountyRecommendation[];
   loading?: boolean;
+  walletConnected?: boolean;
+  onConnectWallet?: () => void;
 }
 
 const KNOWN_TAGS = [
@@ -129,6 +131,8 @@ function BountyRecommendationCard({ recommendation }: { recommendation: BountyRe
 export default function RecommendedBounties({
   recommendations,
   loading,
+  walletConnected = true,
+  onConnectWallet,
 }: RecommendedBountiesProps) {
   const [activeTag, setActiveTag] = useState<string>('All');
 
@@ -140,6 +144,28 @@ export default function RecommendedBounties({
 
           return haystack.some((tag) => tag.includes(activeTag.toLowerCase()));
         });
+
+  if (!walletConnected) {
+    return (
+      <section className="panel recommendations-panel">
+        <div className="panel-header">
+          <div>
+            <span className="panel-kicker">Personalized for you</span>
+            <h2>Recommended bounties</h2>
+          </div>
+          <Star size={18} />
+        </div>
+        <div className="empty-state">
+          <p>Connect your wallet to see personalized bounty recommendations.</p>
+          {onConnectWallet && (
+            <button type="button" className="connect-wallet-btn" onClick={onConnectWallet}>
+              Connect wallet
+            </button>
+          )}
+        </div>
+      </section>
+    );
+  }
 
   if (loading) {
     return (

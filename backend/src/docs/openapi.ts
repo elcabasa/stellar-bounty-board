@@ -267,6 +267,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/bounties/:id/cancel",
+  tags: ["Bounties"],
+  summary: "Cancel an open bounty",
+  description:
+    "Cancels an `open` bounty before any contributor has reserved it. " +
+    "Transitions the bounty to `refunded`, records a `canceledAt` timestamp, and returns the full escrow (no fee). " +
+    "Cannot be called on `reserved`, `submitted`, `released`, or already `refunded` bounties. " +
+    "Only the maintainer address recorded on the bounty may call this endpoint. " +
+    "Rate-limited to **5 requests per IP per minute**.",
+  request: {
+    params: z.object({ id: z.string().openapi(bountyIdParam.schema) }),
+    body: jsonBody(maintainerActionSchema),
+  },
+  responses: {
+    200: bountyDataResponse("Bounty canceled."),
+    400: errorResponse("Bounty not found, not open, maintainer mismatch, or validation failed."),
+  },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/bounties/:id/notes",
   tags: ["Bounties"],
@@ -384,7 +405,7 @@ export function generateOpenApiDocument() {
         "REST API for the Stellar Bounty Board — a platform for posting, reserving, submitting, " +
         "and releasing on-chain bounties backed by Stellar tokens.\n\n" +
         "**Bounty lifecycle:** `open` → `reserved` → `submitted` → `released`\n\n" +
-        "Maintainers may also `refund` an `open` or `reserved` bounty at any time. " +
+        "Maintainers may `cancel` an `open` bounty before reservation, or `refund` an `open` or `reserved` bounty after the deadline. " +
         "Bounties whose deadline passes are automatically transitioned to `expired`.",
     },
     servers: [{ url: "http://localhost:3001", description: "Local development server" }],

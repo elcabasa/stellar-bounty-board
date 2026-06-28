@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ContributorProfilePage from "./ContributorProfilePage";
 import type { Bounty } from "./types";
 
+vi.mock("./api", () => ({
+  listBounties: vi.fn(),
+}));
+
+import { listBounties } from "./api";
+
 const mockBounties: Bounty[] = [
   {
     id: "1",
@@ -64,6 +70,8 @@ const mockLeaderboard = [
 ];
 
 beforeEach(() => {
+  window.localStorage.clear();
+  vi.mocked(listBounties).mockResolvedValue(mockBounties);
   const globalAny: any = global;
   globalAny.fetch = vi.fn((url: string) => {
     if (url.includes("/api/bounties")) {
@@ -97,5 +105,7 @@ describe("ContributorProfilePage", () => {
 
     // Leaderboard entry
     expect(screen.getByText(/GCCCC...CCC/)).toBeInTheDocument();
+
+    expect(screen.getByText(/connect your wallet to see personalized bounty recommendations/i)).toBeInTheDocument();
   });
 });

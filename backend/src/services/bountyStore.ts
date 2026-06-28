@@ -46,6 +46,7 @@ export type BountyTransitionType =
   | "submit"
   | "release"
   | "refund"
+  | "cancel"
   | "expire"
   | "dispute"
   | "update_notes";
@@ -128,6 +129,10 @@ export interface BountyRecord {
   refundedAt?: number;
   /** Stellar transaction hash of the refund payment. */
   refundedTxHash?: string;
+  /** Unix timestamp in seconds of when an open bounty was canceled by the maintainer. */
+  canceledAt?: number;
+  /** Stellar transaction hash of the cancellation payment. */
+  canceledTxHash?: string;
   /** URL to the submission solution (e.g., Pull Request link). */
   submissionUrl?: string;
   /** Submission notes left by the contributor. */
@@ -863,6 +868,73 @@ export async function refundBounty(
         actor: maintainer,
         metadata: {
           transactionHash: updated.refundedTxHash,
+        },
+      },
+    ]);
+    await invalidateBountyCache();
+    return persisted;
+  });
+}
+
+/**
+ * Cancels an open bounty before reservation, returning escrow to the maintainer.
+ *
+ * Acquires a global lock during execution. Only works on bounties in "open" status.
+ *
+ * @param {string} id - The unique ID of the bounty.
+ * @param {string} maintainer - The Stellar address of the maintainer requesting cancellation.
+ * @param {string} [transactionHash] - Optional Stellar transaction hash for the cancellation.
+ * @returns {Promise<BountyRecord>} A promise that resolves to the updated bounty record.
+ * @throws {Error} If the bounty is not found.
+ * @throws {Error} If the maintainer address does not match the maintainer of the bounty.
+ * @throws {Error} If the bounty is not in "open" status.
+ */
+export async function cancelBounty(
+  id: string,
+  maintainer: string,
+  transactionHash?: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.maintainer !== maintainer) {
+      throw new Error("Maintainer address does not match this bounty.");
+    }
+    if (bounty.status !== "open") {
+      throw new Error("Only open bounties can be canceled.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      status: "refunded",
+      canceledAt: now,
+      canceledTxHash: transactionHash?.trim()
+        ? transactionHash.trim()
+        : bounty.canceledTxHash,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        {
+          type: "refunded",
+          timestamp: now,
+          actor: maintainer,
+          details: { reason: "canceled" },
+        },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: "refunded",
+        transition: "cancel",
+        actor: maintainer,
+        metadata: {
+          transactionHash: updated.canceledTxHash,
         },
       },
     ]);

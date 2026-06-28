@@ -16,6 +16,7 @@ import {
   listBountiesCached,
   invalidateBountyCache,
   refundBounty,
+  cancelBounty,
   releaseBounty,
   reserveBounty,
   submitBounty,
@@ -535,6 +536,33 @@ app.post(
 
     try {
       const bounty = await refundBounty(
+        parseId(req.params.id),
+        parsedBody.data.maintainer,
+        parsedBody.data.transactionHash
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/cancel',
+  mutationLimiter,
+  idempotencyMiddleware,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = maintainerActionSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await cancelBounty(
         parseId(req.params.id),
         parsedBody.data.maintainer,
         parsedBody.data.transactionHash

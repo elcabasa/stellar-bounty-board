@@ -90,6 +90,14 @@ pub struct BountyRefunded {
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyCanceled {
+    pub bounty_id: u64,
+    pub maintainer: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BountyDisputed {
     pub bounty_id: u64,
     pub contributor: Address,
@@ -372,6 +380,34 @@ impl StellarBountyBoardContract {
         env.events().publish(
             (symbol_short!("Bounty"), symbol_short!("Refund")),
             BountyRefunded {
+                bounty_id,
+                maintainer,
+                amount: bounty.amount,
+            },
+        );
+    }
+
+    pub fn cancel_bounty(env: Env, bounty_id: u64, maintainer: Address) {
+        maintainer.require_auth();
+        let mut bounty = read_bounty(&env, bounty_id);
+
+        if bounty.maintainer != maintainer {
+            panic_error(ContractError::MaintainerMismatch);
+        }
+        if bounty.status != BountyStatus::Open {
+            panic_error(ContractError::BountyNotOpen);
+        }
+
+        let token_client = TokenClient::new(&env, &bounty.token);
+        let contract_address = env.current_contract_address();
+        token_client.transfer(&contract_address, &maintainer, &bounty.amount);
+
+        bounty.status = BountyStatus::Refunded;
+        write_bounty(&env, bounty_id, &bounty);
+
+        env.events().publish(
+            (symbol_short!("Bounty"), symbol_short!("Cancel")),
+            BountyCanceled {
                 bounty_id,
                 maintainer,
                 amount: bounty.amount,

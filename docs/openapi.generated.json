@@ -3,7 +3,7 @@
   "info": {
     "title": "Stellar Bounty Board API",
     "version": "1.0.0",
-    "description": "REST API for the Stellar Bounty Board — a platform for posting, reserving, submitting, and releasing on-chain bounties backed by Stellar tokens.\n\n**Bounty lifecycle:** `open` → `reserved` → `submitted` → `released`\n\nMaintainers may also `refund` an `open` or `reserved` bounty at any time. Bounties whose deadline passes are automatically transitioned to `expired`."
+    "description": "REST API for the Stellar Bounty Board — a platform for posting, reserving, submitting, and releasing on-chain bounties backed by Stellar tokens.\n\n**Bounty lifecycle:** `open` → `reserved` → `submitted` → `released`\n\nMaintainers may `cancel` an `open` bounty before reservation, or `refund` an `open` or `reserved` bounty after the deadline. Bounties whose deadline passes are automatically transitioned to `expired`."
   },
   "servers": [
     {
@@ -105,6 +105,15 @@
             "type": "string",
             "example": "0000000000000000000000000000000000000000000000000000000000000000"
           },
+          "canceledAt": {
+            "type": "number",
+            "description": "Unix timestamp (seconds) when an open bounty was canceled by the maintainer.",
+            "example": 1710007200
+          },
+          "canceledTxHash": {
+            "type": "string",
+            "example": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
           "submissionUrl": {
             "type": "string",
             "example": "https://github.com/owner/repo/pull/99"
@@ -170,7 +179,10 @@
               "submit",
               "release",
               "refund",
-              "expire"
+              "cancel",
+              "expire",
+              "dispute",
+              "update_notes"
             ],
             "example": "reserve"
           },
@@ -971,6 +983,66 @@
           },
           "400": {
             "description": "Bounty not found, already finalised, maintainer mismatch, or validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bounties/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Bounties"
+        ],
+        "summary": "Cancel an open bounty",
+        "description": "Cancels an `open` bounty before any contributor has reserved it. Transitions the bounty to `refunded`, records a `canceledAt` timestamp, and returns the full escrow (no fee). Cannot be called on `reserved`, `submitted`, `released`, or already `refunded` bounties. Only the maintainer address recorded on the bounty may call this endpoint. Rate-limited to **5 requests per IP per minute**.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "BNT-0001"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaintainerActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bounty canceled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/BountyRecord"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bounty not found, not open, maintainer mismatch, or validation failed.",
             "content": {
               "application/json": {
                 "schema": {
