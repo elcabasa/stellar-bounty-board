@@ -1156,6 +1156,27 @@ export function listAllAuditLogs(
 }
 
 /**
+ * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
+ */
+export function listAllAuditLogs(
+  options: { limit?: number; offset?: number } = {},
+): AuditLogPage {
+  const { limit = 50, offset = 0 } = options;
+  const all = readAuditStore();
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
 
 export function getBountyEvents(bountyId: string): BountyEvent[] {
   const records = listBounties();
@@ -1275,6 +1296,26 @@ export function getGlobalMetrics(): GlobalMetrics {
   };
 }
 
+const GLOBAL_METRICS_CACHE_KEY = "stats:global";
+const GLOBAL_METRICS_TTL_SECONDS = 30;
+
+/**
+ * Cache-backed variant of {@link getGlobalMetrics} with a 30-second TTL.
+ *
+ * @param {CacheAdapter} [cache=getCache()] - The cache adapter to use for caching.
+ * @returns {Promise<GlobalMetrics>} A promise that resolves to the global metrics.
+ */
+export async function getGlobalMetricsCached(
+  cache: CacheAdapter = getCache(),
+): Promise<GlobalMetrics> {
+  const cached = await cache.get(GLOBAL_METRICS_CACHE_KEY);
+  if (cached) {
+    return JSON.parse(cached) as GlobalMetrics;
+  }
+  const metrics = getGlobalMetrics();
+  await cache.set(GLOBAL_METRICS_CACHE_KEY, JSON.stringify(metrics), GLOBAL_METRICS_TTL_SECONDS);
+  return metrics;
+}
 
 export interface LeaderboardEntry {
   /** The Stellar address of the contributor. */

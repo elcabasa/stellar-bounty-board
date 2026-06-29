@@ -339,6 +339,42 @@ registry.registerPath({
   },
 });
 
+const globalMetricsSchema = z
+  .object({
+    totalBounties: z.number().int().openapi({ example: 42, description: "Total number of bounties created." }),
+    openCount: z.number().int().openapi({ example: 10, description: "Number of bounties with status 'open'." }),
+    reservedCount: z.number().int().openapi({ example: 5, description: "Number of bounties with status 'reserved'." }),
+    submittedCount: z.number().int().openapi({ example: 3, description: "Number of bounties with status 'submitted'." }),
+    releasedCount: z.number().int().openapi({ example: 20, description: "Number of bounties with status 'released'." }),
+    refundedCount: z.number().int().openapi({ example: 2, description: "Number of bounties with status 'refunded'." }),
+    expiredCount: z.number().int().openapi({ example: 2, description: "Number of bounties with status 'expired'." }),
+    totalFunded: z.number().openapi({ example: 1250.5, description: "Sum of all bounty amounts in XLM." }),
+    totalReleased: z.number().openapi({ example: 850.0, description: "Sum of released bounty amounts in XLM." }),
+    uniqueMaintainers: z.number().int().openapi({ example: 8, description: "Count of unique maintainer addresses." }),
+    uniqueContributors: z.number().int().openapi({ example: 15, description: "Count of unique contributor addresses." }),
+  })
+  .openapi("GlobalMetrics");
+
+registry.register("GlobalMetrics", globalMetricsSchema);
+
+registry.registerPath({
+  method: "get",
+  path: "/api/stats",
+  tags: ["Stats"],
+  summary: "Global platform metrics",
+  description:
+    "Returns aggregate statistics for the entire platform including bounty status counts, " +
+    "total funded and released amounts, and unique participant counts. " +
+    "Response is cached with a **30-second TTL** to reduce computation overhead.",
+  responses: {
+    200: jsonResponse(
+      "Global platform metrics.",
+      z.object({ data: globalMetricsSchema }),
+    ),
+    500: errorResponse("Failed to compute global stats."),
+  },
+});
+
 const leaderboardEntrySchema = z
   .object({
     address: z.string().openapi({ example: "GBBB...BBB", description: "Contributor Stellar address." }),
