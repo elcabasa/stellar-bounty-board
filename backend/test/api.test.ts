@@ -6,6 +6,10 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTRIBUTOR, MAINTAINER, OTHER_ACCOUNT, validCreateBody } from "./fixtures";
 
+function makeString(kb: number): string {
+  return "x".repeat(kb * 1024);
+}
+
 let storeFile: string;
 
 beforeEach(async () => {
@@ -712,5 +716,26 @@ describe("GET /api/leaderboard", () => {
     expect(entry).toHaveProperty("address");
     expect(entry).toHaveProperty("totalXlm");
     expect(entry).toHaveProperty("bountiesCompleted");
+  });
+});
+
+describe("API — body size limit and JSON parse errors", () => {
+  it("POST with payload larger than 32kb returns 413", async () => {
+    const app = await getApp();
+    const res = await request(app)
+      .post("/api/bounties")
+      .send({ ...validCreateBody, title: makeString(33) })
+      .expect(413);
+    expect(res.body).toEqual({ error: "Payload too large", maxBytes: 32768 });
+  });
+
+  it("POST with malformed JSON returns 400", async () => {
+    const app = await getApp();
+    const res = await request(app)
+      .post("/api/bounties")
+      .set("Content-Type", "application/json")
+      .send("{invalid}")
+      .expect(400);
+    expect(res.body).toEqual({ error: "Invalid JSON" });
   });
 });

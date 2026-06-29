@@ -20,7 +20,7 @@ import {
 } from "./api";
 
 
-import SkeletonBountyCard from "./SkeletonBountyCard";
+import BountyListLoading from "./BountyListLoading";
 import EmptyState from "./EmptyState";
 import { ShortcutsHelpOverlay } from "./ShortcutsHelpOverlay";
 import BountyCountdown from "./BountyCountdown";
@@ -113,6 +113,19 @@ const BountyAmount = memo(function BountyAmount({ bounty }: { bounty: Bounty }) 
 
   useEffect(() => {
     let active = true;
+
+    if (bounty.tokenSymbol.toUpperCase() === "USDC") {
+      const formatted = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(bounty.amount);
+      setUsdAmount(formatted);
+      return () => {
+        active = false;
+      };
+    }
 
     if (bounty.tokenSymbol.toUpperCase() !== "XLM") {
       setUsdAmount(null);
@@ -613,6 +626,7 @@ function App() {
             </div>
           </div>
 
+          {loading && <BountyListLoading />}
 
                   </div>
                 </div>

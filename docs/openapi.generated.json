@@ -356,7 +356,7 @@
             "example": "Fixed by updating the redirect handler."
           }
         },
-        "required": ["contributor"]
+
       },
       "MaintainerActionRequest": {
         "type": "object",
@@ -419,26 +419,14 @@
         "type": "object",
         "properties": {}
       },
-      "LeaderboardEntry": {
-        "type": "object",
-        "properties": {
-          "address": {
-            "type": "string",
-            "description": "Contributor Stellar address.",
-            "example": "GBBB...BBB"
-          },
-          "totalXlm": {
-            "type": "number",
-            "description": "Total XLM received from released bounties.",
-            "example": 350.5
-          },
+
           "bountiesCompleted": {
             "type": "integer",
             "description": "Number of released bounties completed.",
             "example": 3
           }
         },
-        "required": ["address", "totalXlm", "bountiesCompleted"]
+
       }
     },
     "parameters": {}
@@ -941,6 +929,7 @@
                     }
                   },
                   "required": ["data"]
+
                 }
               }
             }

@@ -70,7 +70,9 @@ function BountyRecommendationCard({ recommendation }: { recommendation: BountyRe
         </div>
         <div className="amount-chip">
           {bounty.amount} {bounty.tokenSymbol}
-          {bounty.tokenSymbol === 'XLM' && <UsdAmount amount={bounty.amount} />}
+          {(bounty.tokenSymbol === 'XLM' || bounty.tokenSymbol === 'USDC') && (
+            <UsdAmount amount={bounty.amount} tokenSymbol={bounty.tokenSymbol} />
+          )}
         </div>
       </div>
 

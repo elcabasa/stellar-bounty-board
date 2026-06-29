@@ -1,8 +1,8 @@
-import compression from 'compression';
 import cors from 'cors';
 import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
+import pinoHttp from 'pino-http';
 import { buildCorsOptions } from './middleware/corsOptions';
 import { generateOpenApiDocument } from './docs/openapi';
 import { getMetrics, httpRequestDuration } from './metrics';
@@ -22,8 +22,8 @@ import {
   getBountyEvents,
   getMaintainerMetrics,
   getGlobalMetrics,
+  getGlobalMetricsCached,
   getLeaderboard,
-  updateBountyNotes,
 } from './services/bountyStore';
 
 import {
@@ -48,7 +48,7 @@ import {
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
 import { readLimiter, mutationLimiter } from './utils';
-import { logStructured } from './logger';
+import { logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 import { draining } from './shutdown';
@@ -70,9 +70,8 @@ function resolveRequestId(req: Request): string {
 }
 
 function requestContextMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const requestId = resolveRequestId(req);
-  req.requestId = requestId;
-  res.setHeader('X-Request-ID', requestId);
+  req.requestId = req.id as string;
+  res.setHeader('X-Request-ID', req.requestId);
 
   const start = process.hrtime.bigint();
 
@@ -89,14 +88,6 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
       },
       durationSec
     );
-
-    logStructured('info', 'http_request', {
-      requestId,
-      method: req.method,
-      path: req.path || '/',
-      status: res.statusCode,
-      durationMs: Math.round(durationMs * 1000) / 1000,
-    });
   });
 
   next();
@@ -117,9 +108,27 @@ app.use(cors(buildCorsOptions()));
 app.use(
   express.json({
     verify: captureRawBody,
+    limit: '32kb',
   })
 );
 
+app.use(
+  pinoHttp({
+    logger: logger as any,
+    genReqId: (req) => resolveRequestId(req),
+    customLogLevel: (req, res, err) => {
+      if (res.statusCode >= 500 || err) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return 'info';
+    },
+    autoLogging: {
+      ignore: (req) => {
+        const url = req.url ?? '';
+        return url === '/api/health' || url === '/api/health/deep' || url === '/worker/health';
+      },
+    },
+  })
+);
 app.use(requestContextMiddleware);
 app.use(readLimiter);
 
@@ -288,6 +297,35 @@ app.get('/worker/health', (_req: Request, res: Response) => {
   });
 });
 
+app.get('/api/bounties/by-issue', (req: Request, res: Response) => {
+  const repo = req.query.repo;
+  const issueStr = req.query.issue;
+
+  if (!repo || !issueStr) {
+    return res.status(400).json({ error: 'Missing required query parameters: repo and issue' });
+  }
+
+  if (typeof repo !== 'string' || typeof issueStr !== 'string') {
+    return res.status(400).json({ error: 'Invalid query parameter types' });
+  }
+
+  const issueNumber = parseInt(issueStr, 10);
+  if (isNaN(issueNumber)) {
+    return res.status(400).json({ error: 'Issue parameter must be a valid number' });
+  }
+
+  const bounties = listBounties();
+  const found = bounties.find(
+    (b) => b.repo.toLowerCase() === repo.toLowerCase() && b.issueNumber === issueNumber
+  );
+
+  if (!found) {
+    return res.status(404).json({ error: `Bounty not found for repository ${repo} and issue #${issueNumber}` });
+  }
+
+  return res.json({ data: found });
+});
+
 app.get('/api/bounties', async (req: Request, res: Response) => {
   try {
     const q = typeof req.query.q === 'string' ? req.query.q : undefined;
@@ -295,6 +333,17 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
       typeof req.query.contributor === 'string' && req.query.contributor.trim()
         ? req.query.contributor.trim()
         : undefined;
+    const maintainer =
+      typeof req.query.maintainer === 'string' && req.query.maintainer.trim()
+        ? req.query.maintainer.trim()
+        : undefined;
+    const status = typeof req.query.status === 'string' && req.query.status.trim() ? req.query.status.trim() : undefined;
+    const tokenSymbol =
+      typeof req.query.tokenSymbol === 'string' && req.query.tokenSymbol.trim()
+        ? req.query.tokenSymbol.trim()
+        : undefined;
+    const sort = typeof req.query.sort === 'string' && req.query.sort.trim() ? req.query.sort.trim() : 'createdAt';
+    const order = typeof req.query.order === 'string' && req.query.order.trim() ? req.query.order.trim() : 'desc';
     const page = parsePaginationValue(req.query.page, 'page', 1, 1);
     const pageSize = parsePaginationValue(req.query.pageSize, 'pageSize', 20, 1, 100);
 
@@ -319,8 +368,27 @@ app.get('/api/bounties', async (req: Request, res: Response) => {
     if (contributor && !isValidStellarAddress(contributor)) {
       throw new Error('contributor must be a valid Stellar public key');
     }
+    if (maintainer && !isValidStellarAddress(maintainer)) {
+      throw new Error('maintainer must be a valid Stellar public key');
+    }
+    if (!['amount', 'deadline', 'createdAt', 'status'].includes(sort)) {
+      throw new Error('sort must be one of: amount, deadline, createdAt, status');
+    }
+    if (!['asc', 'desc'].includes(order)) {
+      throw new Error('order must be one of: asc, desc');
+    }
 
-    const all = await listBountiesCached({ q, contributor, deadlineBefore, deadlineAfter });
+    const all = await listBountiesCached({
+      q,
+      contributor,
+      maintainer,
+      status: status as never,
+      tokenSymbol,
+      deadlineBefore,
+      deadlineAfter,
+      sort: sort as never,
+      order: order as never,
+    });
     const total = all.length;
     const start = (page - 1) * pageSize;
     const data = all.slice(start, start + pageSize);
@@ -714,6 +782,15 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
   }
 });
 
+app.get('/api/stats', async (_req: Request, res: Response) => {
+  try {
+    const metrics = await getGlobalMetricsCached();
+    res.json({ data: metrics });
+  } catch (error) {
+    sendError(res, _req, error, 500);
+  }
+});
+
 /**
  * GET /api/audit-log
  *
@@ -750,3 +827,15 @@ app.get(
     }
   },
 );
+
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  if ((err as any).type === 'entity.too.large') {
+    res.status(413).json({ error: 'Payload too large', maxBytes: 32768 });
+    return;
+  }
+  if (err instanceof SyntaxError && (err as any).type === 'entity.parse.failed' && (err as any).body) {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
+  next(err);
+});
