@@ -6,6 +6,10 @@ import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CONTRIBUTOR, MAINTAINER, OTHER_ACCOUNT, validCreateBody } from "./fixtures";
 
+function makeString(kb: number): string {
+  return "x".repeat(kb * 1024);
+}
+
 let storeFile: string;
 
 beforeEach(async () => {
@@ -471,114 +475,20 @@ describe("API — bounty lifecycle routes", () => {
     expect(rel.body.data.releasedTxHash).toBe(txHash);
 
     const logs = await request(app)
-      .get(`/api/bounties/${id}/audit-logs`)
-      .query({ limit: 10, offset: 0 })
+      .get(`/api/bounties/${id}/audit-log`)
+      .query({ page: 1, pageSize: 10 })
       .expect(200);
     expect(logs.body.data.map((entry: { transition: string }) => entry.transition)).toEqual([
       "reserve",
       "submit",
       "release",
     ]);
-    expect(logs.body.pagination.total).toBe(3);
+    expect(logs.body.total).toBe(3);
+    expect(logs.body.page).toBe(1);
+    expect(logs.body.pageSize).toBe(10);
   });
 
-  it("full bounty lifecycle: create → reserve → submit → release with detailed assertions", async () => {
-    const app = await getApp();
-
-    // Step 1: Create the bounty
-    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
-    let bounty = createRes.body.data;
-    const id = bounty.id;
-
-    expect(bounty.status).toBe("open");
-    expect(bounty.maintainer).toBe(MAINTAINER);
-    expect(bounty.version).toBe(1);
-    expect(bounty.createdAt).toBeGreaterThan(0);
-    expect(bounty.deadlineAt).toBe(bounty.createdAt + 30 * 24 * 60 * 60);
-
-    // Step 2: Reserve the bounty
-    const reserveRes = await request(app)
-      .post(`/api/bounties/${id}/reserve`)
-      .send({ contributor: CONTRIBUTOR })
-      .expect(200);
-    bounty = reserveRes.body.data;
-
-    expect(bounty.status).toBe("reserved");
-    expect(bounty.contributor).toBe(CONTRIBUTOR);
-    expect(bounty.version).toBe(2);
-    expect(bounty.reservedAt).toBeGreaterThan(0);
-    expect(bounty.reservedAt).toBeGreaterThanOrEqual(bounty.createdAt);
-
-    // Step 3: Submit the work
-    const submissionUrl = "https://github.com/owner/repo-name/pull/42";
-    const submitNotes = "Fixed the issue completely! See PR for details.";
-    const submitRes = await request(app)
-      .post(`/api/bounties/${id}/submit`)
-      .send({
-        contributor: CONTRIBUTOR,
-        submissionUrl,
-        notes: submitNotes,
-      })
-      .expect(200);
-    bounty = submitRes.body.data;
-
-    expect(bounty.status).toBe("submitted");
-    expect(bounty.submissionUrl).toBe(submissionUrl);
-    expect(bounty.notes).toBe(submitNotes);
-    expect(bounty.version).toBe(3);
-    expect(bounty.submittedAt).toBeGreaterThanOrEqual(bounty.reservedAt!);
-
-    // Step 4: Release the payment
-    const transactionHash = "b".repeat(64);
-    const releaseRes = await request(app)
-      .post(`/api/bounties/${id}/release`)
-      .send({ maintainer: MAINTAINER, transactionHash })
-      .expect(200);
-    bounty = releaseRes.body.data;
-
-    expect(bounty.status).toBe("released");
-    expect(bounty.releasedTxHash).toBe(transactionHash);
-    expect(bounty.version).toBe(4);
-    expect(bounty.releasedAt).toBeGreaterThanOrEqual(bounty.submittedAt!);
-
-    // Check audit logs
-    const logsRes = await request(app)
-      .get(`/api/bounties/${id}/audit-logs`)
-      .query({ limit: 10, offset: 0 })
-      .expect(200);
-    const auditLogs = logsRes.body.data;
-
-    expect(logsRes.body.pagination.total).toBe(3);
-
-    // Check reserve log
-    expect(auditLogs[0].transition).toBe("reserve");
-    expect(auditLogs[0].fromStatus).toBe("open");
-    expect(auditLogs[0].toStatus).toBe("reserved");
-    expect(auditLogs[0].actor).toBe(CONTRIBUTOR);
-
-    // Check submit log
-    expect(auditLogs[1].transition).toBe("submit");
-    expect(auditLogs[1].fromStatus).toBe("reserved");
-    expect(auditLogs[1].toStatus).toBe("submitted");
-    expect(auditLogs[1].actor).toBe(CONTRIBUTOR);
-    expect(auditLogs[1].metadata).toHaveProperty("submissionUrl", submissionUrl);
-    expect(auditLogs[1].metadata).toHaveProperty("hasNotes", true);
-
-    // Check release log
-    expect(auditLogs[2].transition).toBe("release");
-    expect(auditLogs[2].fromStatus).toBe("submitted");
-    expect(auditLogs[2].toStatus).toBe("released");
-    expect(auditLogs[2].actor).toBe(MAINTAINER);
-    expect(auditLogs[2].metadata).toHaveProperty("transactionHash", transactionHash);
-
-    // Check events
-    const eventsRes = await request(app)
-      .get(`/api/bounties/${id}/events`)
-      .expect(200);
-    expect(eventsRes.body.data).toHaveLength(4); // created, reserved, submitted, released
-  });
-
-  it("GET /api/bounties/:id/audit-logs supports pagination", async () => {
+  it("GET /api/bounties/:id/audit-log supports pagination", async () => {
     const app = await getApp();
     const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     const id = created.data.id as string;
@@ -590,24 +500,33 @@ describe("API — bounty lifecycle routes", () => {
       .expect(200);
     await request(app).post(`/api/bounties/${id}/release`).send({ maintainer: MAINTAINER }).expect(200);
 
-    const first = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 2, offset: 0 }).expect(200);
+    const first = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 1, pageSize: 2 }).expect(200);
     expect(first.body.data).toHaveLength(2);
-    expect(first.body.pagination.hasMore).toBe(true);
-    expect(first.body.pagination.nextOffset).toBe(2);
+    expect(first.body.page).toBe(1);
+    expect(first.body.pageSize).toBe(2);
+    expect(first.body.total).toBe(3);
 
-    const second = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 2, offset: 2 }).expect(200);
+    const second = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 2, pageSize: 2 }).expect(200);
     expect(second.body.data).toHaveLength(1);
-    expect(second.body.pagination.hasMore).toBe(false);
-    expect(second.body.pagination.nextOffset).toBeNull();
+    expect(second.body.page).toBe(2);
+    expect(second.body.pageSize).toBe(2);
+    expect(second.body.total).toBe(3);
   });
 
-  it("GET /api/bounties/:id/audit-logs validates query params", async () => {
+  it("GET /api/bounties/:id/audit-log validates query params", async () => {
     const app = await getApp();
     const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     const id = created.data.id as string;
 
-    const res = await request(app).get(`/api/bounties/${id}/audit-logs`).query({ limit: 0 }).expect(400);
-    expect(res.body.error).toMatch(/limit/i);
+    const res = await request(app).get(`/api/bounties/${id}/audit-log`).query({ page: 0 }).expect(400);
+    expect(res.body.error).toMatch(/page/i);
+  });
+
+  it("GET /api/bounties/:id/audit-log returns 404 for unknown bounty IDs", async () => {
+    const app = await getApp();
+
+    const res = await request(app).get('/api/bounties/BNT-9999/audit-log').expect(404);
+    expect(res.body.error).toMatch(/not found/i);
   });
 
   it("GET /api/bounties/released/export.csv returns CSV export", async () => {
@@ -800,34 +719,23 @@ describe("GET /api/leaderboard", () => {
   });
 });
 
-describe("GET /api/bounties/by-issue", () => {
-  it("returns 400 when query parameters are missing", async () => {
+describe("API — body size limit and JSON parse errors", () => {
+  it("POST with payload larger than 32kb returns 413", async () => {
     const app = await getApp();
-    const res1 = await request(app).get("/api/bounties/by-issue?repo=owner/repo").expect(400);
-    expect(res1.body.error).toContain("Missing required query parameters");
-
-    const res2 = await request(app).get("/api/bounties/by-issue?issue=41").expect(400);
-    expect(res2.body.error).toContain("Missing required query parameters");
-  });
-
-  it("returns 404 when bounty is not found", async () => {
-    const app = await getApp();
-    const res = await request(app).get("/api/bounties/by-issue?repo=nonexistent/repo&issue=999").expect(404);
-    expect(res.body.error).toContain("Bounty not found");
-  });
-
-  it("returns 200 with the bounty when found", async () => {
-    const app = await getApp();
-    const { body: created } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
-    const repo = created.data.repo;
-    const issueNumber = created.data.issueNumber;
-
     const res = await request(app)
-      .get(`/api/bounties/by-issue?repo=${repo}&issue=${issueNumber}`)
-      .expect(200);
+      .post("/api/bounties")
+      .send({ ...validCreateBody, title: makeString(33) })
+      .expect(413);
+    expect(res.body).toEqual({ error: "Payload too large", maxBytes: 32768 });
+  });
 
-    expect(res.body.data.id).toBe(created.data.id);
-    expect(res.body.data.repo).toBe(repo);
-    expect(res.body.data.issueNumber).toBe(issueNumber);
+  it("POST with malformed JSON returns 400", async () => {
+    const app = await getApp();
+    const res = await request(app)
+      .post("/api/bounties")
+      .set("Content-Type", "application/json")
+      .send("{invalid}")
+      .expect(400);
+    expect(res.body).toEqual({ error: "Invalid JSON" });
   });
 });

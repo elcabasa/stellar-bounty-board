@@ -1156,6 +1156,27 @@ export function listAllAuditLogs(
 }
 
 /**
+ * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
+ */
+export function listAllAuditLogs(
+  options: { limit?: number; offset?: number } = {},
+): AuditLogPage {
+  const { limit = 50, offset = 0 } = options;
+  const all = readAuditStore();
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
 
 export function getBountyEvents(bountyId: string): BountyEvent[] {
   const records = listBounties();

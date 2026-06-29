@@ -132,10 +132,12 @@ export const submitBountySchema = z
     contributor: stellarAccountSchema.openapi({
       description: 'Must match the contributor who reserved the bounty.',
     }),
-    submissionUrl: githubPrUrlSchema.openapi({
-      example: 'https://github.com/owner/repo/pull/99',
-      description: 'GitHub pull request URL for the submitted solution.',
+
+    submissionUrl: z.string().trim().url().openapi({
+      example: 'https://github.com/owner/repo/pull/123',
+      description: 'GitHub pull request URL for the submission.',
     }),
+
     notes: z
       .string()
       .trim()
@@ -308,7 +310,9 @@ export const bountyAuditLogPaginationSchema = z
 export const bountyAuditLogListResponseSchema = z
   .object({
     data: z.array(bountyAuditLogSchema),
-    pagination: bountyAuditLogPaginationSchema,
+    total: z.number().int().min(0).openapi({ example: 3 }),
+    page: z.number().int().min(1).openapi({ example: 1 }),
+    pageSize: z.number().int().min(1).max(100).openapi({ example: 20 }),
   })
   .openapi('BountyAuditLogListResponse');
 

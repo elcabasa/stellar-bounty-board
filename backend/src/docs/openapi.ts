@@ -186,28 +186,29 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/bounties/{id}/audit-logs",
+  path: "/api/bounties/{id}/audit-log",
   tags: ["Bounties"],
   summary: "List audit logs for one bounty",
   description:
     "Returns ordered status transition history for a bounty. " +
-    "Use `limit` (1-100, default 20) and `offset` (default 0) for pagination.",
+    "Use `page` (default 1) and `pageSize` (1-100, default 20) for pagination.",
   request: {
     params: z.object({ id: z.string().openapi(bountyIdParam.schema) }),
     query: z.object({
-      limit: z.number().int().min(1).max(100).optional().openapi({
-        example: 20,
-        description: "Maximum number of audit entries to return (1-100).",
+      page: z.number().int().min(1).optional().openapi({
+        example: 1,
+        description: "One-based page number.",
       }),
-      offset: z.number().int().min(0).optional().openapi({
-        example: 0,
-        description: "Zero-based offset into the ordered audit history.",
+      pageSize: z.number().int().min(1).max(100).optional().openapi({
+        example: 20,
+        description: "Number of audit entries per page (1-100).",
       }),
     }),
   },
   responses: {
     200: jsonResponse("Audit log page for the requested bounty.", bountyAuditLogListResponseSchema),
-    400: errorResponse("Bounty not found, bounty id invalid, or pagination query invalid."),
+    400: errorResponse("Bounty id invalid or pagination query invalid."),
+    404: errorResponse("Bounty not found."),
   },
 });
 
