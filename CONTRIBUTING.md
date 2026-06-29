@@ -178,6 +178,10 @@ open backend/coverage/index.html
 xdg-open backend/coverage/index.html
 ```
 
+### Rate Limiting in Test Environment
+
+To facilitate frictionless integration and load testing, strict rate limiting is automatically bypassed when running the application with `NODE_ENV=test`. In production (`NODE_ENV=production`), rate limiting is fully active.
+
 ### Test Types
 
 **Unit Tests**

@@ -53,6 +53,7 @@ export const baseLoggerOptions: pino.LoggerOptions = {
     paths: [
       "req.headers.authorization",
       "req.headers.cookie",
+      'req.headers["x-stellar-signature"]',
       "*.password",
       "*.secret",
       "*.token",

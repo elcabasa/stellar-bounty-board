@@ -76,6 +76,14 @@ async function requestJson<T>(path: string, options: RequestOptions = {}): Promi
     ...init
   } = options;
 
+  const headers = { ...((init.headers || {}) as Record<string, string>) };
+  if (!headers['X-Request-ID'] && !headers['x-request-id']) {
+    headers['X-Request-ID'] = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : Math.random().toString(36).substring(2) + Date.now().toString(36);
+  }
+  init.headers = headers;
+
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
@@ -123,6 +131,14 @@ async function requestBlob(
     retryLabel = 'Request',
     ...init
   } = options;
+
+  const headers = { ...((init.headers || {}) as Record<string, string>) };
+  if (!headers['X-Request-ID'] && !headers['x-request-id']) {
+    headers['X-Request-ID'] = typeof crypto !== 'undefined' && crypto.randomUUID 
+      ? crypto.randomUUID() 
+      : Math.random().toString(36).substring(2) + Date.now().toString(36);
+  }
+  init.headers = headers;
 
   let lastError: unknown;
 

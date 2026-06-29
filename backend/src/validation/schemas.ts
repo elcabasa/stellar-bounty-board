@@ -2,11 +2,21 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
 import { isValidStellarAddress } from '../utils';
+import { githubPrUrlSchema } from './prUrl';
 
 extendZodWithOpenApi(z);
 
 const REPO_REGEX = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const TOKEN_REGEX = /^[A-Za-z0-9]{1,12}$/;
+const DEFAULT_ALLOWED_TOKEN_SYMBOLS = ['XLM', 'USDC'];
+
+export function getAllowedTokenSymbols(): string[] {
+  const configured = process.env.ALLOWED_TOKEN_SYMBOLS?.split(',')
+    .map((symbol) => symbol.trim().toUpperCase())
+    .filter(Boolean);
+
+  return configured && configured.length > 0 ? configured : DEFAULT_ALLOWED_TOKEN_SYMBOLS;
+}
 
 const STELLAR_EXAMPLE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
 const TX_HASH_REGEX = /^[0-9a-fA-F]{64}$/;
@@ -59,6 +69,16 @@ export const createBountySchema = z
       .string()
       .trim()
       .regex(TOKEN_REGEX, 'Token symbol must be 1-12 letters or numbers.')
+      .transform((symbol) => symbol.toUpperCase())
+      .superRefine((symbol, ctx) => {
+        const allowed = getAllowedTokenSymbols();
+        if (!allowed.includes(symbol)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Unsupported token symbol. Allowed values: ${allowed.join(', ')}`,
+          });
+        }
+      })
       .openapi({
         example: 'XLM',
         description: 'Stellar token symbol for payout (1–12 alphanumeric chars).',
@@ -113,7 +133,10 @@ export const submitBountySchema = z
       description: 'Must match the contributor who reserved the bounty.',
     }),
 
-
+    submissionUrl: z.string().trim().url().openapi({
+      example: 'https://github.com/owner/repo/pull/123',
+      description: 'GitHub pull request URL for the submission.',
+    }),
 
     notes: z
       .string()
@@ -160,6 +183,22 @@ export const maintainerActionSchema = z
       }),
   })
   .openapi('MaintainerActionRequest');
+
+export const updateNotesSchema = z
+  .object({
+    maintainer: stellarAccountSchema.openapi({
+      description: 'Must match the maintainer address on the bounty.',
+    }),
+    notes: z
+      .string()
+      .trim()
+      .max(2000, 'Notes must be at most 2000 characters.')
+      .openapi({
+        example: 'Added additional details about the bounty requirements.',
+        description: 'Maintainer notes for the bounty (max 2000 characters).',
+      }),
+  })
+  .openapi('UpdateNotesRequest');
 
 // ---------------------------------------------------------------------------
 // Shared response schemas
@@ -242,7 +281,7 @@ export const bountyAuditLogSchema = z
       .enum(['open', 'reserved', 'submitted', 'released', 'refunded', 'expired'])
       .openapi({ example: 'reserved' }),
     transition: z
-      .enum(['reserve', 'submit', 'release', 'refund', 'expire'])
+      .enum(['reserve', 'submit', 'release', 'refund', 'expire', 'dispute', 'update_notes'])
       .openapi({ example: 'reserve' }),
     actor: z.string().openapi({ example: STELLAR_EXAMPLE }),
     timestamp: z
@@ -271,7 +310,9 @@ export const bountyAuditLogPaginationSchema = z
 export const bountyAuditLogListResponseSchema = z
   .object({
     data: z.array(bountyAuditLogSchema),
-    pagination: bountyAuditLogPaginationSchema,
+    total: z.number().int().min(0).openapi({ example: 3 }),
+    page: z.number().int().min(1).openapi({ example: 1 }),
+    pageSize: z.number().int().min(1).max(100).openapi({ example: 20 }),
   })
   .openapi('BountyAuditLogListResponse');
 

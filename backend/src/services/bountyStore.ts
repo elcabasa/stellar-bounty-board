@@ -7,6 +7,7 @@ import {
 import { logStructured } from "../logger";
 import { getCache, type CacheAdapter } from "./cache";
 import { bountiesCreatedTotal, bountiesReleasedTotal } from "../metrics";
+import { validateGithubPrUrlForRepo } from "../validation/prUrl";
 
 /**
  * Represents the current state of a bounty.
@@ -47,14 +48,15 @@ export type BountyTransitionType =
   | "release"
   | "refund"
   | "expire"
-  | "dispute";
+  | "dispute"
+  | "update_notes";
 
 /**
  * Represents a historical event in the lifecycle of a bounty.
  */
 export interface BountyEvent {
   /** The type of event (usually matches the resulting status or "created"). */
-  type: BountyStatus | "created";
+  type: BountyStatus | "created" | "notes_updated";
   /** Unix timestamp in seconds when the event occurred. */
   timestamp: number;
   /** Stellar public key of the actor who triggered the event. */
@@ -464,29 +466,76 @@ function persistUpdated(
 export interface ListBountiesOptions {
   /** Case-insensitive substring filter applied to title, summary, and labels. */
   q?: string;
+  /** Exact Stellar address filter applied to contributor. */
+  contributor?: string;
+  /** Exact Stellar address filter applied to maintainer. */
+  maintainer?: string;
+  /** Exact token symbol filter. */
+  tokenSymbol?: string;
+  /** Exact bounty status filter. */
+  status?: BountyStatus;
+  /** Sort field for the result set. */
+  sort?: "amount" | "deadline" | "createdAt" | "status";
+  /** Sort direction for the result set. */
+  order?: "asc" | "desc";
+  /** Filter bounties with deadlineBefore (unix timestamp in seconds). */
+  deadlineBefore?: number;
+  /** Filter bounties with deadlineAfter (unix timestamp in seconds). */
+  deadlineAfter?: number;
 }
 
 export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] {
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
+  const contributor = options.contributor?.trim();
+  const maintainer = options.maintainer?.trim();
+  const tokenSymbol = options.tokenSymbol?.trim().toUpperCase();
+  const status = options.status;
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
 
   // Single-pass: filter and copy in one iteration, then sort.
-  // Avoids the prior two-pass pattern of spread-sort then filter.
   const result: BountyRecord[] = [];
   for (let i = 0; i < records.length; i++) {
     const b = records[i];
-    if (
+    const passesQ =
       !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q))
-    ) {
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
+    const passesMaintainer = !maintainer || b.maintainer === maintainer;
+    const passesTokenSymbol = !tokenSymbol || b.tokenSymbol.toUpperCase() === tokenSymbol;
+    const passesStatus = !status || b.status === status;
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    if (passesQ && passesContributor && passesMaintainer && passesTokenSymbol && passesStatus && passesDeadlineBefore && passesDeadlineAfter) {
       result.push(b);
     }
   }
 
-  result.sort((a, b) => b.createdAt - a.createdAt);
+  sortBounties(result, options.sort ?? "createdAt", options.order ?? "desc");
   return result;
+}
+
+
+function sortBounties(
+  bounties: BountyRecord[],
+  sort: "amount" | "deadline" | "createdAt" | "status",
+  order: "asc" | "desc",
+): void {
+  const direction = order === "asc" ? 1 : -1;
+  bounties.sort((a, b) => {
+    let comparison: number;
+    if (sort === "deadline") {
+      comparison = a.deadlineAt - b.deadlineAt;
+    } else if (sort === "status") {
+      comparison = a.status.localeCompare(b.status);
+    } else {
+      comparison = a[sort] - b[sort];
+    }
+    return comparison * direction || b.createdAt - a.createdAt;
+  });
 }
 
 // ── Cached list for the public board (#361) ──────────────────────────────────
@@ -497,7 +546,7 @@ const BOUNTY_LIST_TTL_SECONDS = 5;
 /**
  * Cache-backed variant of {@link listBounties} for the hot `/api/bounties` read
  * path. The full normalized+sorted list is cached (5s TTL) so it is shared
- * across replicas via Redis; the cheap `q` filter is applied to the cached list
+ * across replicas via Redis; filters are applied to the cached list
  * per request. Writes call {@link invalidateBountyCache}.
  *
  * @param {ListBountiesOptions} [options={}] - Filtering options for the bounty retrieval.
@@ -518,15 +567,30 @@ export async function listBountiesCached(
   }
 
   const q = options.q?.trim().toLowerCase();
-  if (!q) {
-    return records;
-  }
-  return records.filter(
-    (b) =>
+  const contributor = options.contributor?.trim();
+  const maintainer = options.maintainer?.trim();
+  const tokenSymbol = options.tokenSymbol?.trim().toUpperCase();
+  const status = options.status;
+  const deadlineBefore = options.deadlineBefore;
+  const deadlineAfter = options.deadlineAfter;
+
+  const filtered = records.filter((b) => {
+    const passesQ =
+      !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
-      b.labels.some((l) => l.toLowerCase().includes(q)),
-  );
+      b.labels.some((l) => l.toLowerCase().includes(q));
+    const passesContributor = !contributor || b.contributor === contributor;
+    const passesMaintainer = !maintainer || b.maintainer === maintainer;
+    const passesTokenSymbol = !tokenSymbol || b.tokenSymbol.toUpperCase() === tokenSymbol;
+    const passesStatus = !status || b.status === status;
+    const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
+    const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
+    return passesQ && passesContributor && passesMaintainer && passesTokenSymbol && passesStatus && passesDeadlineBefore && passesDeadlineAfter;
+  });
+
+  sortBounties(filtered, options.sort ?? "createdAt", options.order ?? "desc");
+  return filtered;
 }
 
 /**
@@ -701,6 +765,8 @@ export async function submitBounty(
     if (bounty.contributor !== contributor) {
       throw new Error("Only the reserved contributor can submit this bounty.");
     }
+
+    validateGithubPrUrlForRepo(submissionUrl, bounty.repo);
 
     const now = nowInSeconds();
     const updated: BountyRecord = {
@@ -1000,6 +1066,47 @@ export async function disputeBounty(
   });
 }
 
+export async function updateBountyNotes(
+  id: string,
+  maintainer: string,
+  notes: string,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.maintainer !== maintainer) {
+      throw new Error("Maintainer address does not match this bounty.");
+    }
+
+    const now = nowInSeconds();
+    const updated: BountyRecord = {
+      ...bounty,
+      notes,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        { type: "notes_updated", timestamp: now, actor: maintainer, details: { notes } },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: bounty.status, // same status, since we're just updating notes
+        transition: "update_notes",
+        actor: maintainer,
+        metadata: { notes },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    return persisted;
+  });
+}
+
 /**
  * Paginated response structure containing a slice of bounty audit logs.
  */
@@ -1051,7 +1158,88 @@ export function listBountyAuditLogs(
   };
 }
 
+export interface ListAllAuditLogsOptions {
+  limit?: number;
+  offset?: number;
+  actor?: string;
+  transition?: string;
+  bountyId?: string;
+  fromStatus?: string;
+  toStatus?: string;
+}
+
+export function listAllAuditLogs(
+  options: ListAllAuditLogsOptions = {},
+): AuditLogPage {
+  const { 
+    limit = 50, 
+    offset = 0, 
+    actor, 
+    transition, 
+    bountyId, 
+    fromStatus, 
+    toStatus 
+  } = options;
+  
+  let all = readAuditStore();
+  
+  if (actor) {
+    all = all.filter((log) => log.actor === actor);
+  }
+  
+  if (transition) {
+    all = all.filter((log) => log.transition === transition);
+  }
+  
+  if (bountyId) {
+    all = all.filter((log) => log.bountyId === bountyId);
+  }
+  
+  if (fromStatus) {
+    all = all.filter((log) => log.fromStatus === fromStatus);
+  }
+  
+  if (toStatus) {
+    all = all.filter((log) => log.toStatus === toStatus);
+  }
+  
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
+
 /**
+ * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
+ */
+export function listAllAuditLogs(
+  options: { limit?: number; offset?: number } = {},
+): AuditLogPage {
+  const { limit = 50, offset = 0 } = options;
+  const all = readAuditStore();
+  const total = all.length;
+  const data = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < total;
+  return {
+    data,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore,
+      nextOffset: hasMore ? offset + limit : null,
+    },
+  };
+}
 
 export function getBountyEvents(bountyId: string): BountyEvent[] {
   const records = listBounties();
@@ -1171,6 +1359,26 @@ export function getGlobalMetrics(): GlobalMetrics {
   };
 }
 
+const GLOBAL_METRICS_CACHE_KEY = "stats:global";
+const GLOBAL_METRICS_TTL_SECONDS = 30;
+
+/**
+ * Cache-backed variant of {@link getGlobalMetrics} with a 30-second TTL.
+ *
+ * @param {CacheAdapter} [cache=getCache()] - The cache adapter to use for caching.
+ * @returns {Promise<GlobalMetrics>} A promise that resolves to the global metrics.
+ */
+export async function getGlobalMetricsCached(
+  cache: CacheAdapter = getCache(),
+): Promise<GlobalMetrics> {
+  const cached = await cache.get(GLOBAL_METRICS_CACHE_KEY);
+  if (cached) {
+    return JSON.parse(cached) as GlobalMetrics;
+  }
+  const metrics = getGlobalMetrics();
+  await cache.set(GLOBAL_METRICS_CACHE_KEY, JSON.stringify(metrics), GLOBAL_METRICS_TTL_SECONDS);
+  return metrics;
+}
 
 export interface LeaderboardEntry {
   /** The Stellar address of the contributor. */
