@@ -10,6 +10,8 @@ import { getMetrics, httpRequestDuration } from './metrics';
 import {
   createBounty,
   disputeBounty,
+  extendDeadline,
+  updateBountyNotes,
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
@@ -30,6 +32,7 @@ import {
   bountyIdSchema,
   createBountySchema,
   disputeBountySchema,
+  extendDeadlineSchema,
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
@@ -685,6 +688,33 @@ app.patch(
         parseId(req.params.id),
         parsedBody.data.maintainer,
         parsedBody.data.notes
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/extend-deadline',
+  mutationLimiter,
+  idempotencyMiddleware,
+  createStellarSignatureAuthMiddleware(),
+  async (req: Request, res: Response) => {
+    const parsedBody = extendDeadlineSchema.safeParse(req.body);
+
+    if (!parsedBody.success) {
+      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+      return;
+    }
+
+    try {
+      const bounty = await extendDeadline(
+        parseId(req.params.id),
+        parsedBody.data.maintainer,
+        parsedBody.data.newDeadline
       );
 
       res.json({ data: bounty });

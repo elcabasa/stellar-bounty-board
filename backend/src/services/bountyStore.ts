@@ -49,14 +49,15 @@ export type BountyTransitionType =
   | "refund"
   | "expire"
   | "dispute"
-  | "update_notes";
+  | "update_notes"
+  | "extend_deadline";
 
 /**
  * Represents a historical event in the lifecycle of a bounty.
  */
 export interface BountyEvent {
   /** The type of event (usually matches the resulting status or "created"). */
-  type: BountyStatus | "created" | "notes_updated";
+  type: BountyStatus | "created" | "notes_updated" | "deadline_extended";
   /** Unix timestamp in seconds when the event occurred. */
   timestamp: number;
   /** Stellar public key of the actor who triggered the event. */
@@ -1045,6 +1046,65 @@ export async function updateBountyNotes(
 }
 
 /**
+ * Extend a bounty's deadline. Only the bounty's maintainer may do this, and the
+ * new deadline must be in the future and strictly later than the current one.
+ * Records a `deadline_extended` event in the bounty's event log.
+ */
+export async function extendDeadline(
+  id: string,
+  maintainer: string,
+  newDeadline: number,
+): Promise<BountyRecord> {
+  return withGlobalLock(async () => {
+    const records = listBounties();
+    const bounty = findBounty(records, id);
+
+    if (bounty.maintainer !== maintainer) {
+      throw new Error("Maintainer address does not match this bounty.");
+    }
+
+    const now = nowInSeconds();
+    if (newDeadline <= now) {
+      throw new Error("New deadline must be in the future.");
+    }
+    if (newDeadline <= bounty.deadlineAt) {
+      throw new Error("New deadline must be later than the current deadline.");
+    }
+
+    const previousDeadline = bounty.deadlineAt;
+    const updated: BountyRecord = {
+      ...bounty,
+      deadlineAt: newDeadline,
+      version: bounty.version + 1,
+      events: [
+        ...bounty.events,
+        {
+          type: "deadline_extended",
+          timestamp: now,
+          actor: maintainer,
+          details: { previousDeadline, newDeadline },
+        },
+      ],
+    };
+
+    const persisted = persistUpdated(records, updated);
+    appendAuditLogs([
+      {
+        bountyId: id,
+        fromStatus: bounty.status,
+        toStatus: bounty.status, // status is unchanged by a deadline extension
+        transition: "extend_deadline",
+        actor: maintainer,
+        metadata: { previousDeadline, newDeadline },
+      },
+    ]);
+    await invalidateBountyCache();
+
+    return persisted;
+  });
+}
+
+/**
  * Paginated response structure containing a slice of bounty audit logs.
  */
 export interface AuditLogPage {
@@ -1140,29 +1200,6 @@ export function listAllAuditLogs(
     all = all.filter((log) => log.toStatus === toStatus);
   }
   
-  const total = all.length;
-  const data = all.slice(offset, offset + limit);
-  const hasMore = offset + limit < total;
-  return {
-    data,
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore,
-      nextOffset: hasMore ? offset + limit : null,
-    },
-  };
-}
-
-/**
- * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
- */
-export function listAllAuditLogs(
-  options: { limit?: number; offset?: number } = {},
-): AuditLogPage {
-  const { limit = 50, offset = 0 } = options;
-  const all = readAuditStore();
   const total = all.length;
   const data = all.slice(offset, offset + limit);
   const hasMore = offset + limit < total;

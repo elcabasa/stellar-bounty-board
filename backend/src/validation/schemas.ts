@@ -200,6 +200,23 @@ export const updateNotesSchema = z
   })
   .openapi('UpdateNotesRequest');
 
+export const extendDeadlineSchema = z
+  .object({
+    maintainer: stellarAccountSchema.openapi({
+      description: 'Must match the maintainer address on the bounty.',
+    }),
+    newDeadline: z
+      .number()
+      .int('New deadline must be an integer Unix timestamp (seconds).')
+      .positive('New deadline must be a positive Unix timestamp (seconds).')
+      .openapi({
+        example: 1920000000,
+        description:
+          'New deadline as a Unix timestamp (seconds). Must be in the future and later than the current deadline.',
+      }),
+  })
+  .openapi('ExtendDeadlineRequest');
+
 // ---------------------------------------------------------------------------
 // Shared response schemas
 // ---------------------------------------------------------------------------
