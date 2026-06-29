@@ -929,77 +929,7 @@
                     }
                   },
                   "required": ["data"]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/stats": {
-      "get": {
-        "tags": [
-          "Stats"
-        ],
-        "summary": "Global platform metrics",
-        "description": "Returns aggregate statistics for the entire platform including bounty status counts, total funded and released amounts, and unique participant counts. Response is cached with a **30-second TTL** to reduce computation overhead.",
-        "responses": {
-          "200": {
-            "description": "Global platform metrics.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/GlobalMetrics"
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Failed to compute global stats.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/leaderboard": {
-      "get": {
-        "tags": [
-          "Leaderboard"
-        ],
-        "summary": "Contributor leaderboard",
-        "description": "Returns the top 10 contributors ranked by total XLM received from released bounties. Ties are broken by the number of bounties completed. Returns an empty array when no bounties have been released yet.",
-        "responses": {
-          "200": {
-            "description": "Top 10 contributors by XLM earned.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/LeaderboardEntry"
-                      }
-                    }
-                  },
-                  "required": [
-                    "data"
-                  ]
+
                 }
               }
             }
