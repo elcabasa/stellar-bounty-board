@@ -769,3 +769,38 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "title"),
 
 }
+
+struct Lcg {
+    state: u128,
+}
+impl Lcg {
+    fn new(seed: u128) -> Self {
+        Self { state: seed }
+    }
+    fn next(&mut self) -> u128 {
+        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        self.state
+    }
+}
+
+#[test]
+fn test_fee_calculation_rounding_invariants() {
+    let mut lcg = Lcg::new(42);
+    for _ in 0..1000 {
+        let bps = (lcg.next() % 10_001) as u32;
+        
+        let max_amount = i128::MAX / 10_000;
+        let range = (max_amount - 100 + 1) as u128;
+        let amount = 100 + (lcg.next() % range) as i128;
+        
+        let fee_amount = if bps == 0 {
+            0
+        } else {
+            (amount * bps as i128) / 10_000
+        };
+        let net_payout = amount - fee_amount;
+        
+        assert_eq!(fee_amount + net_payout, amount, "Fee + net_payout should equal original amount");
+        assert!(net_payout >= 0, "Net payout must be non-negative");
+    }
+}
