@@ -52,6 +52,8 @@ import { logStructured } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 import { draining } from './shutdown';
+import healthRouter from './routes/health';
+
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
 
@@ -107,6 +109,7 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
 
 export const app = express();
 
+app.use('/api/health', healthRouter);
 app.use((_req: Request, res: Response, next: NextFunction) => {
   if (draining) {
     res.setHeader('Connection', 'close');

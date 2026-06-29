@@ -7,6 +7,32 @@ use soroban_sdk::{
     Address, Env, IntoVal, String,
 };
 
+// ─── Version Tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_get_version_matches_cargo_toml() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, StellarBountyBoardContract);
+    let client = StellarBountyBoardContractClient::new(&env, &contract_id);
+
+    let version = client.get_version();
+    let expected = env!("CARGO_PKG_VERSION");
+
+    assert_eq!(
+        version.to_string(),
+        expected,
+        "get_version() should return the semver from Cargo.toml"
+    );
+}
+
+#[test]
+fn test_contract_version_constant() {
+    // Direct assertion on the compile-time constant
+    assert_eq!(CONTRACT_VERSION, env!("CARGO_PKG_VERSION"));
+    assert!(!CONTRACT_VERSION.is_empty());
+    assert!(CONTRACT_VERSION.contains('.')); // basic semver check
+}
+
 // ─── Shared setup ────────────────────────────────────────────────────────────
 fn setup_test(
     env: &Env,
