@@ -24,6 +24,7 @@ import {
   getGlobalMetrics,
   getGlobalMetricsCached,
   getLeaderboard,
+  aggregatedMetrics,
 } from './services/bountyStore';
 
 import {
@@ -784,7 +785,7 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
 
 app.get('/api/stats', async (_req: Request, res: Response) => {
   try {
-    const metrics = await getGlobalMetricsCached();
+    const metrics = await aggregatedMetrics.getCached();
     res.json({ data: metrics });
   } catch (error) {
     sendError(res, _req, error, 500);
