@@ -1148,3 +1148,68 @@ export function getGlobalMetrics(): { totalBounties: number; totalOpen: number; 
     totalExpired: records.filter(b => b.status === 'expired').length,
   };
 }
+ feat/concurrency-file-locking
+
+const GLOBAL_METRICS_CACHE_KEY = "stats:global";
+const GLOBAL_METRICS_TTL_SECONDS = 30;
+
+/**
+ * Cache-backed variant of {@link getGlobalMetrics} with a 30-second TTL.
+ *
+ * @param {CacheAdapter} [cache=getCache()] - The cache adapter to use for caching.
+ * @returns {Promise<GlobalMetrics>} A promise that resolves to the global metrics.
+ */
+export async function getGlobalMetricsCached(
+  cache: CacheAdapter = getCache(),
+): Promise<GlobalMetrics> {
+  const cached = await cache.get(GLOBAL_METRICS_CACHE_KEY);
+  if (cached) {
+    return JSON.parse(cached) as GlobalMetrics;
+  }
+  const metrics = getGlobalMetrics();
+  await cache.set(GLOBAL_METRICS_CACHE_KEY, JSON.stringify(metrics), GLOBAL_METRICS_TTL_SECONDS);
+  return metrics;
+}
+
+export interface LeaderboardEntry {
+  /** The Stellar address of the contributor. */
+  address: string;
+  /** Total reward tokens earned/released to the contributor. */
+  totalXlm: number;
+  /** Total number of successfully completed and released bounties. */
+  bountiesCompleted: number;
+}
+
+/**
+ * Retrieves a leaderboard of top contributors based on their earned token rewards and completed bounties.
+ *
+ * @param {number} [limit=10] - The maximum number of leaderboard entries to return.
+ * @returns {LeaderboardEntry[]} A sorted array of leaderboard entries.
+ */
+export function getLeaderboard(limit = 10): LeaderboardEntry[] {
+  const entries = new Map<string, LeaderboardEntry>();
+
+  for (const bounty of listBounties()) {
+    if (bounty.status !== "released" || !bounty.contributor) {
+      continue;
+    }
+
+    const entry = entries.get(bounty.contributor) ?? {
+      address: bounty.contributor,
+      totalXlm: 0,
+      bountiesCompleted: 0,
+    };
+
+    entry.totalXlm += bounty.amount;
+    entry.bountiesCompleted += 1;
+    entries.set(bounty.contributor, entry);
+  }
+
+  return Array.from(entries.values())
+    .sort(
+      (a, b) =>
+        b.totalXlm - a.totalXlm || b.bountiesCompleted - a.bountiesCompleted,
+    )
+    .slice(0, limit);
+}
+ main

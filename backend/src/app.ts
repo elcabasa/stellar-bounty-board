@@ -22,6 +22,7 @@ import {
   getBountyEvents,
   getMaintainerMetrics,
   getGlobalMetrics,
+  getGlobalMetricsCached,
   getLeaderboard,
   updateBountyNotes,
 } from './services/bountyStore';
@@ -746,6 +747,15 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
     res.json({ data: metrics });
   } catch (error) {
     sendError(res, _req, error);
+  }
+});
+
+app.get('/api/stats', async (_req: Request, res: Response) => {
+  try {
+    const metrics = await getGlobalMetricsCached();
+    res.json({ data: metrics });
+  } catch (error) {
+    sendError(res, _req, error, 500);
   }
 });
 
