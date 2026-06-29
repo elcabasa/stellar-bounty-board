@@ -7,6 +7,7 @@ import {
 import { logStructured } from "../logger";
 import { getCache, type CacheAdapter } from "./cache";
 import { bountiesCreatedTotal, bountiesReleasedTotal } from "../metrics";
+import { validateGithubPrUrlForRepo } from "../validation/prUrl";
 
 /**
  * Represents the current state of a bounty.
@@ -467,6 +468,16 @@ export interface ListBountiesOptions {
   q?: string;
   /** Exact Stellar address filter applied to contributor. */
   contributor?: string;
+  /** Exact Stellar address filter applied to maintainer. */
+  maintainer?: string;
+  /** Exact token symbol filter. */
+  tokenSymbol?: string;
+  /** Exact bounty status filter. */
+  status?: BountyStatus;
+  /** Sort field for the result set. */
+  sort?: "amount" | "deadline" | "createdAt" | "status";
+  /** Sort direction for the result set. */
+  order?: "asc" | "desc";
   /** Filter bounties with deadlineBefore (unix timestamp in seconds). */
   deadlineBefore?: number;
   /** Filter bounties with deadlineAfter (unix timestamp in seconds). */
@@ -477,6 +488,9 @@ export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] 
   const records = normalizeRecords(readStore());
   const q = options.q?.trim().toLowerCase();
   const contributor = options.contributor?.trim();
+  const maintainer = options.maintainer?.trim();
+  const tokenSymbol = options.tokenSymbol?.trim().toUpperCase();
+  const status = options.status;
   const deadlineBefore = options.deadlineBefore;
   const deadlineAfter = options.deadlineAfter;
 
@@ -490,15 +504,38 @@ export function listBounties(options: ListBountiesOptions = {}): BountyRecord[] 
       b.summary.toLowerCase().includes(q) ||
       b.labels.some((l) => l.toLowerCase().includes(q));
     const passesContributor = !contributor || b.contributor === contributor;
+    const passesMaintainer = !maintainer || b.maintainer === maintainer;
+    const passesTokenSymbol = !tokenSymbol || b.tokenSymbol.toUpperCase() === tokenSymbol;
+    const passesStatus = !status || b.status === status;
     const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
     const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
-    if (passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter) {
+    if (passesQ && passesContributor && passesMaintainer && passesTokenSymbol && passesStatus && passesDeadlineBefore && passesDeadlineAfter) {
       result.push(b);
     }
   }
 
-  result.sort((a, b) => b.createdAt - a.createdAt);
+  sortBounties(result, options.sort ?? "createdAt", options.order ?? "desc");
   return result;
+}
+
+
+function sortBounties(
+  bounties: BountyRecord[],
+  sort: "amount" | "deadline" | "createdAt" | "status",
+  order: "asc" | "desc",
+): void {
+  const direction = order === "asc" ? 1 : -1;
+  bounties.sort((a, b) => {
+    let comparison: number;
+    if (sort === "deadline") {
+      comparison = a.deadlineAt - b.deadlineAt;
+    } else if (sort === "status") {
+      comparison = a.status.localeCompare(b.status);
+    } else {
+      comparison = a[sort] - b[sort];
+    }
+    return comparison * direction || b.createdAt - a.createdAt;
+  });
 }
 
 // ── Cached list for the public board (#361) ──────────────────────────────────
@@ -531,20 +568,29 @@ export async function listBountiesCached(
 
   const q = options.q?.trim().toLowerCase();
   const contributor = options.contributor?.trim();
+  const maintainer = options.maintainer?.trim();
+  const tokenSymbol = options.tokenSymbol?.trim().toUpperCase();
+  const status = options.status;
   const deadlineBefore = options.deadlineBefore;
   const deadlineAfter = options.deadlineAfter;
 
-  return records.filter((b) => {
+  const filtered = records.filter((b) => {
     const passesQ =
       !q ||
       b.title.toLowerCase().includes(q) ||
       b.summary.toLowerCase().includes(q) ||
       b.labels.some((l) => l.toLowerCase().includes(q));
     const passesContributor = !contributor || b.contributor === contributor;
+    const passesMaintainer = !maintainer || b.maintainer === maintainer;
+    const passesTokenSymbol = !tokenSymbol || b.tokenSymbol.toUpperCase() === tokenSymbol;
+    const passesStatus = !status || b.status === status;
     const passesDeadlineBefore = deadlineBefore === undefined || b.deadlineAt < deadlineBefore;
     const passesDeadlineAfter = deadlineAfter === undefined || b.deadlineAt > deadlineAfter;
-    return passesQ && passesContributor && passesDeadlineBefore && passesDeadlineAfter;
+    return passesQ && passesContributor && passesMaintainer && passesTokenSymbol && passesStatus && passesDeadlineBefore && passesDeadlineAfter;
   });
+
+  sortBounties(filtered, options.sort ?? "createdAt", options.order ?? "desc");
+  return filtered;
 }
 
 /**
@@ -704,6 +750,8 @@ export async function submitBounty(
     if (bounty.contributor !== contributor) {
       throw new Error("Only the reserved contributor can submit this bounty.");
     }
+
+    validateGithubPrUrlForRepo(submissionUrl, bounty.repo);
 
     const now = nowInSeconds();
     const updated: BountyRecord = {
