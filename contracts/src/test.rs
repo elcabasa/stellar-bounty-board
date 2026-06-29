@@ -608,7 +608,7 @@ fn test_double_reserve_bounty() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let (client, maintainer, contributor, token_id) = setup_test(&env);
+    let (client, maintainer, contributor, token_id, _, _) = setup_test(&env);
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
     token_admin.mint(&maintainer, &1000);
 
@@ -620,6 +620,7 @@ fn test_double_reserve_bounty() {
         &1,
         &String::from_str(&env, "title"),
         &(env.ledger().timestamp() + 1000),
+        &0u32,
     );
 
     // First reservation should succeed
@@ -742,30 +743,96 @@ fn test_extend_deadline_earlier() {
     client.extend_deadline(&bounty_id, &maintainer, &earlier_deadline);
 }
 
+// ─── Dispute window boundary enforcement ─────────────────────────────────────
+//
+// `resolve_dispute` rejects with `DisputeWindowNotMet` while
+// `ledger.timestamp() < dispute_raised_at + dispute_window`. The dispute window
+// configured by `setup_test` is 600 seconds. The helper below drives a bounty
+// into the Disputed state and returns the bounty id together with the timestamp
+// at which the dispute was raised, so each test can probe an exact boundary.
+fn create_disputed_bounty(
+    env: &Env,
+    client: &StellarBountyBoardContractClient<'static>,
+    maintainer: &Address,
+    contributor: &Address,
+    token_id: &Address,
+    arbiter: &Address,
+) -> (u64, u64) {
+    let deadline = env.ledger().timestamp() + 100_000;
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(env, "repo"),
+        &1,
+        &String::from_str(env, "title"),
+        &deadline,
+        &0u32,
+    );
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    let raised_at = env.ledger().timestamp();
+    (bounty_id, raised_at)
+}
+
+const DISPUTE_WINDOW: u64 = 600;
+
 #[test]
+fn test_resolve_dispute_exactly_at_window_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    let (client, maintainer, contributor, token_id, _, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    let (bounty_id, raised_at) =
+        create_disputed_bounty(&env, &client, &maintainer, &contributor, &token_id, &arbiter);
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    // Exactly at dispute_raised_at + dispute_window — the window has elapsed.
+    env.ledger().set_timestamp(raised_at + DISPUTE_WINDOW);
+    client.resolve_dispute(&bounty_id, &true);
 
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Released);
+}
+
+#[test]
+#[should_panic(expected = "DisputeWindowNotMet")]
+fn test_resolve_dispute_one_second_before_window_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let (bounty_id, raised_at) =
+        create_disputed_bounty(&env, &client, &maintainer, &contributor, &token_id, &arbiter);
+
+    // One second before the window closes — must be rejected.
+    env.ledger().set_timestamp(raised_at + DISPUTE_WINDOW - 1);
+    client.resolve_dispute(&bounty_id, &true);
+}
+
+#[test]
+fn test_resolve_dispute_one_second_after_window_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let (bounty_id, raised_at) =
+        create_disputed_bounty(&env, &client, &maintainer, &contributor, &token_id, &arbiter);
+
+    // One second after the window closes — clearly allowed.
+    env.ledger().set_timestamp(raised_at + DISPUTE_WINDOW + 1);
+    client.resolve_dispute(&bounty_id, &true);
+
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Released);
 }
