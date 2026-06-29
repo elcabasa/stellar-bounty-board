@@ -619,7 +619,11 @@ export async function createBounty(
       amount: bounty.amount,
       tokenSymbol: bounty.tokenSymbol,
     }).catch((err) =>
-      console.warn("[createBounty] Notification failed (non-blocking):", err),
+      logStructured("warn", "notification_failed", {
+        operation: "createBounty",
+        bountyId: bounty.id,
+        message: err instanceof Error ? err.message : String(err),
+      }),
     );
 
     return bounty;
@@ -948,7 +952,11 @@ export async function disputeBounty(
       reason,
       disputedAt: now,
     }).catch((err) =>
-      console.warn("[disputeBounty] Notification failed (non-blocking):", err),
+      logStructured("warn", "notification_failed", {
+        operation: "disputeBounty",
+        bountyId: id,
+        message: err instanceof Error ? err.message : String(err),
+      }),
     );
 
     return persisted;

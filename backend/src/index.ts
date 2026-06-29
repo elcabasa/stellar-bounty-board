@@ -40,7 +40,9 @@ function startIndexerWorker() {
         try {
           await invalidateBountyCache();
         } catch (err) {
-          console.warn("Failed to invalidate bounty cache from indexer message:", err);
+          logStructured("warn", "indexer_cache_invalidation_failed", {
+            message: err instanceof Error ? err.message : String(err),
+          });
         }
       }
     });
