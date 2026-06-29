@@ -310,8 +310,7 @@
           },
           "maintainer": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
-            "description": "A valid Stellar public key (starts with G, 56 characters).",
+            "description": "A valid Stellar public key (starts with G, 56 characters, checksum verified).",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
           "tokenSymbol": {
@@ -322,10 +321,9 @@
           },
           "amount": {
             "type": "number",
-            "minimum": 1,
-            "maximum": 10000,
-            "description": "Bounty amount in XLM (1-10000, up to 7 decimal places).",
-            "example": 100
+            "exclusiveMinimum": 0,
+            "description": "Payout amount in the selected token.",
+            "example": 42.5
           },
           "deadlineDays": {
             "type": "integer",
@@ -372,7 +370,6 @@
         "properties": {
           "contributor": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Stellar public key of the contributor reserving the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
@@ -391,15 +388,8 @@
         "properties": {
           "contributor": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Must match the contributor who reserved the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
-          },
-          "submissionUrl": {
-            "type": "string",
-            "pattern": "^https:\\/\\/github\\.com\\/[a-zA-Z0-9_.-]+\\/[a-zA-Z0-9_.-]+\\/pull\\/\\d+$",
-            "description": "Link to the GitHub pull request.",
-            "example": "https://github.com/owner/repo/pull/99"
           },
           "notes": {
             "type": "string",
@@ -409,8 +399,7 @@
           }
         },
         "required": [
-          "contributor",
-          "submissionUrl"
+          "contributor"
         ]
       },
       "MaintainerActionRequest": {
@@ -418,7 +407,6 @@
         "properties": {
           "maintainer": {
             "type": "string",
-            "pattern": "^G[A-Z2-7]{55}$",
             "description": "Must match the maintainer address on the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
@@ -490,24 +478,104 @@
       },
       "HealthResponse": {
         "type": "object",
+        "properties": {}
+      },
+      "GlobalMetrics": {
+        "type": "object",
         "properties": {
-          "service": {
-            "type": "string",
-            "example": "stellar-bounty-board-backend"
+          "totalBounties": {
+            "type": "integer",
+            "description": "Total number of bounties created.",
+            "example": 42
           },
-          "status": {
-            "type": "string",
-            "example": "ok"
+          "openCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'open'.",
+            "example": 10
           },
-          "timestamp": {
-            "type": "string",
-            "example": "2026-03-24T19:00:00.000Z"
+          "reservedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'reserved'.",
+            "example": 5
+          },
+          "submittedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'submitted'.",
+            "example": 3
+          },
+          "releasedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'released'.",
+            "example": 20
+          },
+          "refundedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'refunded'.",
+            "example": 2
+          },
+          "expiredCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'expired'.",
+            "example": 2
+          },
+          "totalFunded": {
+            "type": "number",
+            "description": "Sum of all bounty amounts in XLM.",
+            "example": 1250.5
+          },
+          "totalReleased": {
+            "type": "number",
+            "description": "Sum of released bounty amounts in XLM.",
+            "example": 850
+          },
+          "uniqueMaintainers": {
+            "type": "integer",
+            "description": "Count of unique maintainer addresses.",
+            "example": 8
+          },
+          "uniqueContributors": {
+            "type": "integer",
+            "description": "Count of unique contributor addresses.",
+            "example": 15
           }
         },
         "required": [
-          "service",
-          "status",
-          "timestamp"
+          "totalBounties",
+          "openCount",
+          "reservedCount",
+          "submittedCount",
+          "releasedCount",
+          "refundedCount",
+          "expiredCount",
+          "totalFunded",
+          "totalReleased",
+          "uniqueMaintainers",
+          "uniqueContributors"
+        ]
+      },
+      "LeaderboardEntry": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Contributor Stellar address.",
+            "example": "GBBB...BBB"
+          },
+          "totalXlm": {
+            "type": "number",
+            "description": "Total XLM received from released bounties.",
+            "example": 350.5
+          },
+          "bountiesCompleted": {
+            "type": "integer",
+            "description": "Number of released bounties completed.",
+            "example": 3
+          }
+        },
+        "required": [
+          "address",
+          "totalXlm",
+          "bountiesCompleted"
         ]
       }
     },
@@ -1001,6 +1069,77 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/components/schemas/OpenIssue"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Global platform metrics",
+        "description": "Returns aggregate statistics for the entire platform including bounty status counts, total funded and released amounts, and unique participant counts. Response is cached with a **30-second TTL** to reduce computation overhead.",
+        "responses": {
+          "200": {
+            "description": "Global platform metrics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GlobalMetrics"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to compute global stats.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "tags": [
+          "Leaderboard"
+        ],
+        "summary": "Contributor leaderboard",
+        "description": "Returns the top 10 contributors ranked by total XLM received from released bounties. Ties are broken by the number of bounties completed. Returns an empty array when no bounties have been released yet.",
+        "responses": {
+          "200": {
+            "description": "Top 10 contributors by XLM earned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LeaderboardEntry"
                       }
                     }
                   },
