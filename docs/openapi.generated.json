@@ -282,13 +282,28 @@
               "$ref": "#/components/schemas/BountyAuditLogRecord"
             }
           },
-          "pagination": {
-            "$ref": "#/components/schemas/BountyAuditLogPagination"
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 1
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "example": 20
           }
         },
         "required": [
           "data",
-          "pagination"
+          "total",
+          "page",
+          "pageSize"
         ]
       },
       "CreateBountyRequest": {
@@ -403,6 +418,12 @@
             "description": "Must match the contributor who reserved the bounty.",
             "example": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF"
           },
+          "submissionUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "GitHub pull request URL for the submission.",
+            "example": "https://github.com/owner/repo/pull/123"
+          },
           "notes": {
             "type": "string",
             "maxLength": 240,
@@ -411,7 +432,8 @@
           }
         },
         "required": [
-          "contributor"
+          "contributor",
+          "submissionUrl"
         ]
       },
       "MaintainerActionRequest": {
@@ -586,6 +608,79 @@
           "timestamp"
         ]
       },
+      "GlobalMetrics": {
+        "type": "object",
+        "properties": {
+          "totalBounties": {
+            "type": "integer",
+            "description": "Total number of bounties created.",
+            "example": 42
+          },
+          "openCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'open'.",
+            "example": 10
+          },
+          "reservedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'reserved'.",
+            "example": 5
+          },
+          "submittedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'submitted'.",
+            "example": 3
+          },
+          "releasedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'released'.",
+            "example": 20
+          },
+          "refundedCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'refunded'.",
+            "example": 2
+          },
+          "expiredCount": {
+            "type": "integer",
+            "description": "Number of bounties with status 'expired'.",
+            "example": 2
+          },
+          "totalFunded": {
+            "type": "number",
+            "description": "Sum of all bounty amounts in XLM.",
+            "example": 1250.5
+          },
+          "totalReleased": {
+            "type": "number",
+            "description": "Sum of released bounty amounts in XLM.",
+            "example": 850
+          },
+          "uniqueMaintainers": {
+            "type": "integer",
+            "description": "Count of unique maintainer addresses.",
+            "example": 8
+          },
+          "uniqueContributors": {
+            "type": "integer",
+            "description": "Count of unique contributor addresses.",
+            "example": 15
+          }
+        },
+        "required": [
+          "totalBounties",
+          "openCount",
+          "reservedCount",
+          "submittedCount",
+          "releasedCount",
+          "refundedCount",
+          "expiredCount",
+          "totalFunded",
+          "totalReleased",
+          "uniqueMaintainers",
+          "uniqueContributors"
+        ]
+      },
       "LeaderboardEntry": {
         "type": "object",
         "properties": {
@@ -673,7 +768,7 @@
           "Bounties"
         ],
         "summary": "List all bounties",
-        "description": "Returns every bounty record sorted by creation date (newest first). Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
+        "description": "Returns bounty records sorted by `createdAt` descending by default, with optional maintainer/status/token filters and sort parameters. Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
         "parameters": [
           {
             "schema": {
@@ -696,8 +791,63 @@
           {
             "schema": {
               "type": "string",
+              "description": "Exact Stellar public key filter applied to the bounty maintainer."
+            },
+            "required": false,
+            "name": "maintainer",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Exact bounty status filter. Combines with maintainer and tokenSymbol using AND logic."
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Exact token symbol filter. Combines with maintainer and status using AND logic."
+            },
+            "required": false,
+            "name": "tokenSymbol",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "amount",
+                "deadline",
+                "createdAt",
+                "status"
+              ],
+              "description": "Field to sort by (default: createdAt)."
+            },
+            "required": false,
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "description": "Sort direction (default: desc)."
+            },
+            "required": false,
+            "name": "order",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "description": "Filter bounties with deadline before this ISO 8601 date string.",
-              "example": "2026-07-28T19:20:12.196Z"
+              "example": "2026-07-29T20:46:10.721Z"
             },
             "required": false,
             "name": "deadlineBefore",
@@ -707,7 +857,7 @@
             "schema": {
               "type": "string",
               "description": "Filter bounties with deadline after this ISO 8601 date string.",
-              "example": "2026-06-28T19:20:12.200Z"
+              "example": "2026-06-29T20:46:10.725Z"
             },
             "required": false,
             "name": "deadlineAfter",
@@ -758,7 +908,7 @@
             }
           },
           "400": {
-            "description": "Invalid query parameters (e.g., invalid date string).",
+            "description": "Invalid query parameters (e.g., invalid date string, maintainer address, sort field, or order).",
             "content": {
               "application/json": {
                 "schema": {
@@ -817,13 +967,13 @@
         }
       }
     },
-    "/api/bounties/{id}/audit-logs": {
+    "/api/bounties/{id}/audit-log": {
       "get": {
         "tags": [
           "Bounties"
         ],
         "summary": "List audit logs for one bounty",
-        "description": "Returns ordered status transition history for a bounty. Use `limit` (1-100, default 20) and `offset` (default 0) for pagination.",
+        "description": "Returns ordered status transition history for a bounty. Use `page` (default 1) and `pageSize` (1-100, default 20) for pagination.",
         "parameters": [
           {
             "schema": {
@@ -838,23 +988,23 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "description": "Maximum number of audit entries to return (1-100).",
-              "example": 20
+              "description": "One-based page number.",
+              "example": 1
             },
             "required": false,
-            "name": "limit",
+            "name": "page",
             "in": "query"
           },
           {
             "schema": {
               "type": "integer",
-              "minimum": 0,
-              "description": "Zero-based offset into the ordered audit history.",
-              "example": 0
+              "minimum": 1,
+              "maximum": 100,
+              "description": "Number of audit entries per page (1-100).",
+              "example": 20
             },
             "required": false,
-            "name": "offset",
+            "name": "pageSize",
             "in": "query"
           }
         ],
@@ -870,7 +1020,17 @@
             }
           },
           "400": {
-            "description": "Bounty not found, bounty id invalid, or pagination query invalid.",
+            "description": "Bounty id invalid or pagination query invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bounty not found.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1267,6 +1427,45 @@
                   "required": [
                     "data"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "tags": [
+          "Stats"
+        ],
+        "summary": "Global platform metrics",
+        "description": "Returns aggregate statistics for the entire platform including bounty status counts, total funded and released amounts, and unique participant counts. Response is cached with a **30-second TTL** to reduce computation overhead.",
+        "responses": {
+          "200": {
+            "description": "Global platform metrics.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GlobalMetrics"
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to compute global stats.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

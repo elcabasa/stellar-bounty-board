@@ -101,7 +101,7 @@ registry.registerPath({
   tags: ["Bounties"],
   summary: "List all bounties",
   description:
-    "Returns every bounty record sorted by creation date (newest first). " +
+    "Returns bounty records sorted by `createdAt` descending by default, with optional maintainer/status/token filters and sort parameters. " +
     "Bounties whose deadline has passed are automatically transitioned to `expired` before the list is returned.",
   request: {
     query: z.object({
@@ -110,6 +110,21 @@ registry.registerPath({
       }),
       contributor: z.string().optional().openapi({
         description: "Exact Stellar public key filter applied to the bounty contributor.",
+      }),
+      maintainer: z.string().optional().openapi({
+        description: "Exact Stellar public key filter applied to the bounty maintainer.",
+      }),
+      status: z.string().optional().openapi({
+        description: "Exact bounty status filter. Combines with maintainer and tokenSymbol using AND logic.",
+      }),
+      tokenSymbol: z.string().optional().openapi({
+        description: "Exact token symbol filter. Combines with maintainer and status using AND logic.",
+      }),
+      sort: z.enum(["amount", "deadline", "createdAt", "status"]).optional().openapi({
+        description: "Field to sort by (default: createdAt).",
+      }),
+      order: z.enum(["asc", "desc"]).optional().openapi({
+        description: "Sort direction (default: desc).",
       }),
       deadlineBefore: z.string().optional().openapi({
         description: "Filter bounties with deadline before this ISO 8601 date string.",
@@ -129,59 +144,36 @@ registry.registerPath({
   },
   responses: {
     200: jsonResponse("Array of all bounty records.", z.object({ data: z.array(bountyRecordSchema) })),
-    400: errorResponse("Invalid query parameters (e.g., invalid date string)."),
+    400: errorResponse("Invalid query parameters (e.g., invalid date string, maintainer address, sort field, or order)."),
   },
 });
 
 registry.registerPath({
   method: "get",
-  path: "/api/bounties/by-issue",
-  tags: ["Bounties"],
-  summary: "Get bounty by repository and issue number",
-  description: "Looks up a single bounty by its GitHub repository and issue number coordinates.",
-  request: {
-    query: z.object({
-      repo: z.string().openapi({
-        description: "GitHub repository path (e.g. owner/repo)",
-        example: "owner/repo",
-      }),
-      issue: z.string().openapi({
-        description: "GitHub issue number",
-        example: "123",
-      }),
-    }),
-  },
-  responses: {
-    200: jsonResponse("The found bounty record.", z.object({ data: bountyRecordSchema })),
-    400: errorResponse("Missing or invalid query parameters."),
-    404: errorResponse("Bounty not found for coordinates."),
-  },
-});
 
-registry.registerPath({
-  method: "get",
-  path: "/api/bounties/{id}/audit-logs",
+  path: "/api/bounties/{id}/audit-log",
   tags: ["Bounties"],
   summary: "List audit logs for one bounty",
   description:
     "Returns ordered status transition history for a bounty. " +
-    "Use `limit` (1-100, default 20) and `offset` (default 0) for pagination.",
+    "Use `page` (default 1) and `pageSize` (1-100, default 20) for pagination.",
   request: {
     params: z.object({ id: z.string().openapi(bountyIdParam.schema) }),
     query: z.object({
-      limit: z.number().int().min(1).max(100).optional().openapi({
-        example: 20,
-        description: "Maximum number of audit entries to return (1-100).",
+      page: z.number().int().min(1).optional().openapi({
+        example: 1,
+        description: "One-based page number.",
       }),
-      offset: z.number().int().min(0).optional().openapi({
-        example: 0,
-        description: "Zero-based offset into the ordered audit history.",
+      pageSize: z.number().int().min(1).max(100).optional().openapi({
+        example: 20,
+        description: "Number of audit entries per page (1-100).",
       }),
     }),
   },
   responses: {
     200: jsonResponse("Audit log page for the requested bounty.", bountyAuditLogListResponseSchema),
-    400: errorResponse("Bounty not found, bounty id invalid, or pagination query invalid."),
+    400: errorResponse("Bounty id invalid or pagination query invalid."),
+    404: errorResponse("Bounty not found."),
   },
 });
 
@@ -330,6 +322,42 @@ registry.registerPath({
     "Returns a curated static list of open feature requests and contribution opportunities for the Stellar Bounty Board project itself.",
   responses: {
     200: jsonResponse("Array of open issues.", z.object({ data: z.array(openIssueSchema) })),
+  },
+});
+
+const globalMetricsSchema = z
+  .object({
+    totalBounties: z.number().int().openapi({ example: 42, description: "Total number of bounties created." }),
+    openCount: z.number().int().openapi({ example: 10, description: "Number of bounties with status 'open'." }),
+    reservedCount: z.number().int().openapi({ example: 5, description: "Number of bounties with status 'reserved'." }),
+    submittedCount: z.number().int().openapi({ example: 3, description: "Number of bounties with status 'submitted'." }),
+    releasedCount: z.number().int().openapi({ example: 20, description: "Number of bounties with status 'released'." }),
+    refundedCount: z.number().int().openapi({ example: 2, description: "Number of bounties with status 'refunded'." }),
+    expiredCount: z.number().int().openapi({ example: 2, description: "Number of bounties with status 'expired'." }),
+    totalFunded: z.number().openapi({ example: 1250.5, description: "Sum of all bounty amounts in XLM." }),
+    totalReleased: z.number().openapi({ example: 850.0, description: "Sum of released bounty amounts in XLM." }),
+    uniqueMaintainers: z.number().int().openapi({ example: 8, description: "Count of unique maintainer addresses." }),
+    uniqueContributors: z.number().int().openapi({ example: 15, description: "Count of unique contributor addresses." }),
+  })
+  .openapi("GlobalMetrics");
+
+registry.register("GlobalMetrics", globalMetricsSchema);
+
+registry.registerPath({
+  method: "get",
+  path: "/api/stats",
+  tags: ["Stats"],
+  summary: "Global platform metrics",
+  description:
+    "Returns aggregate statistics for the entire platform including bounty status counts, " +
+    "total funded and released amounts, and unique participant counts. " +
+    "Response is cached with a **30-second TTL** to reduce computation overhead.",
+  responses: {
+    200: jsonResponse(
+      "Global platform metrics.",
+      z.object({ data: globalMetricsSchema }),
+    ),
+    500: errorResponse("Failed to compute global stats."),
   },
 });
 
