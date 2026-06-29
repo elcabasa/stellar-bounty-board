@@ -161,31 +161,7 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
-  path: "/api/bounties/by-issue",
-  tags: ["Bounties"],
-  summary: "Get bounty by repository and issue number",
-  description: "Looks up a single bounty by its GitHub repository and issue number coordinates.",
-  request: {
-    query: z.object({
-      repo: z.string().openapi({
-        description: "GitHub repository path (e.g. owner/repo)",
-        example: "owner/repo",
-      }),
-      issue: z.string().openapi({
-        description: "GitHub issue number",
-        example: "123",
-      }),
-    }),
-  },
-  responses: {
-    200: jsonResponse("The found bounty record.", z.object({ data: bountyRecordSchema })),
-    400: errorResponse("Missing or invalid query parameters."),
-    404: errorResponse("Bounty not found for coordinates."),
-  },
-});
 
-registry.registerPath({
-  method: "get",
   path: "/api/bounties/{id}/audit-log",
   tags: ["Bounties"],
   summary: "List audit logs for one bounty",
