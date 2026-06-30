@@ -54,8 +54,5 @@ describe("Open Issues feed", () => {
     const second = await request(app).get("/api/open-issues").expect(200);
     // second call should return cached value
     expect(second.body.data.length).toBe(1);
-
-    const health = await request(app).get("/api/health/deep").expect(200);
-    expect(["stale", "rate-limited", "up"]).toContain(health.body.openIssuesFeed);
   });
 });

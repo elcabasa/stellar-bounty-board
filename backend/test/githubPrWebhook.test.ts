@@ -66,7 +66,7 @@ describe('GitHub webhook PR auto-release', () => {
   it('Merged PR triggers bounty release automatically', async () => {
     const { createBounty, reserveBounty, submitBounty, listBounties } = await getStore();
     const app = await getApp();
-    const prUrl = 'https://github.com/owner/repo/pull/100';
+    const prUrl = 'https://github.com/owner/repo-name/pull/100';
 
     const bounty = await createBounty(validCreateBody);
     await reserveBounty(bounty.id, CONTRIBUTOR);
@@ -93,7 +93,7 @@ describe('GitHub webhook PR auto-release', () => {
   it('Closed-but-not-merged PR does not trigger release', async () => {
     const { createBounty, reserveBounty, submitBounty, listBounties } = await getStore();
     const app = await getApp();
-    const prUrl = 'https://github.com/owner/repo/pull/101';
+    const prUrl = 'https://github.com/owner/repo-name/pull/101';
 
     const bounty = await createBounty(validCreateBody);
     await reserveBounty(bounty.id, CONTRIBUTOR);
@@ -117,8 +117,8 @@ describe('GitHub webhook PR auto-release', () => {
   it('Bounty without matching PR URL is ignored gracefully', async () => {
     const { createBounty, reserveBounty, submitBounty, listBounties } = await getStore();
     const app = await getApp();
-    const prUrl = 'https://github.com/owner/repo/pull/102';
-    const differentPrUrl = 'https://github.com/owner/repo/pull/999';
+    const prUrl = 'https://github.com/owner/repo-name/pull/102';
+    const differentPrUrl = 'https://github.com/owner/repo-name/pull/999';
 
     const bounty = await createBounty(validCreateBody);
     await reserveBounty(bounty.id, CONTRIBUTOR);
@@ -142,7 +142,7 @@ describe('GitHub webhook PR auto-release', () => {
   it('Manual release still works if webhook was not received', async () => {
     const { createBounty, reserveBounty, submitBounty } = await getStore();
     const app = await getApp();
-    const prUrl = 'https://github.com/owner/repo/pull/103';
+    const prUrl = 'https://github.com/owner/repo-name/pull/103';
 
     const bounty = await createBounty(validCreateBody);
     await reserveBounty(bounty.id, CONTRIBUTOR);
