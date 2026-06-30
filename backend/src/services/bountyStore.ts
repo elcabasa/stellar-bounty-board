@@ -125,6 +125,8 @@ export interface BountyRecord {
   releasedAt?: number;
   /** Stellar transaction hash of the release payment. */
   releasedTxHash?: string;
+  /** Protocol fee collected when this bounty was released (in token units). */
+  protocolFeeCollected?: number;
   /** Unix timestamp in seconds of when the bounty was refunded. */
   refundedAt?: number;
   /** Stellar transaction hash of the refund payment. */
@@ -794,6 +796,7 @@ export async function submitBounty(
  * @param {string} id - The unique ID of the bounty.
  * @param {string} maintainer - The Stellar address of the maintainer releasing the bounty.
  * @param {string} [transactionHash] - Optional Stellar transaction hash for the payment.
+ * @param {number} [protocolFeeCollected=0] - Protocol fee amount collected for this release.
  * @returns {Promise<BountyRecord>} A promise that resolves to the updated bounty record.
  * @throws {Error} If the bounty is not found.
  * @throws {Error} If the maintainer address does not match the maintainer who created the bounty.
@@ -803,6 +806,7 @@ export async function releaseBounty(
   id: string,
   maintainer: string,
   transactionHash?: string,
+  protocolFeeCollected = 0,
 ): Promise<BountyRecord> {
   return withGlobalLock(async () => {
     const records = listBounties();
@@ -823,6 +827,7 @@ export async function releaseBounty(
       releasedTxHash: transactionHash?.trim()
         ? transactionHash.trim()
         : bounty.releasedTxHash,
+      protocolFeeCollected: protocolFeeCollected > 0 ? protocolFeeCollected : (bounty.protocolFeeCollected ?? 0),
       version: bounty.version + 1,
       events: [
         ...bounty.events,
@@ -1158,26 +1163,6 @@ export function listAllAuditLogs(
 /**
  * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
  */
-export function listAllAuditLogs(
-  options: { limit?: number; offset?: number } = {},
-): AuditLogPage {
-  const { limit = 50, offset = 0 } = options;
-  const all = readAuditStore();
-  const total = all.length;
-  const data = all.slice(offset, offset + limit);
-  const hasMore = offset + limit < total;
-  return {
-    data,
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore,
-      nextOffset: hasMore ? offset + limit : null,
-    },
-  };
-}
-
 export function getBountyEvents(bountyId: string): BountyEvent[] {
   const records = listBounties();
   const bounty = records.find((b) => b.id === bountyId);
@@ -1265,6 +1250,11 @@ export interface GlobalMetrics {
   uniqueMaintainers: number;
   /** Total number of unique contributor addresses. */
   uniqueContributors: number;
+  /**
+   * Cumulative protocol fees collected across all released bounties.
+   * Mirrors the on-chain FeeStats.total_collected value indexed by the backend.
+   */
+  protocolFeesCollected: number;
 }
 
 /**
@@ -1277,6 +1267,10 @@ export function getGlobalMetrics(): GlobalMetrics {
   const totalFunded = bounties.reduce((sum, b) => sum + b.amount, 0);
   const released = bounties.filter((b) => b.status === "released");
   const totalReleased = released.reduce((sum, b) => sum + b.amount, 0);
+  const protocolFeesCollected = released.reduce(
+    (sum, b) => sum + (b.protocolFeeCollected ?? 0),
+    0,
+  );
   const uniqueMaintainers = new Set(bounties.map((b) => b.maintainer)).size;
   const uniqueContributors = new Set(
     bounties.filter((b) => b.contributor).map((b) => b.contributor as string),
@@ -1293,6 +1287,7 @@ export function getGlobalMetrics(): GlobalMetrics {
     totalReleased,
     uniqueMaintainers,
     uniqueContributors,
+    protocolFeesCollected,
   };
 }
 

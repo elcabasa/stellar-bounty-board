@@ -742,8 +742,102 @@ fn test_extend_deadline_earlier() {
     client.extend_deadline(&bounty_id, &maintainer, &earlier_deadline);
 }
 
+// ─── FeeStats tests ──────────────────────────────────────────────────────────
+
+/// get_fee_stats returns zeros before any bounty has been released.
 #[test]
+fn test_get_fee_stats_zero_releases() {
+    let env = Env::default();
+    env.mock_all_auths();
 
+    let (client, _maintainer, _contributor, _token_id, _fee_recipient, _arbiter) = setup_test(&env);
+
+    let stats = client.get_fee_stats();
+    assert_eq!(stats.total_collected, 0);
+    assert_eq!(stats.bounty_count, 0);
+}
+
+/// get_fee_stats reflects the fee collected after a single release.
+#[test]
+fn test_get_fee_stats_one_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    // Mint enough for the maintainer
+    token_admin.mint(&maintainer, &1000);
+
+    // Create bounty with 500 bps (5%) fee
+    let deadline = env.ledger().timestamp() + 1000;
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &1000,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &deadline,
+        &500u32, // 5% fee
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.release_bounty(&bounty_id, &maintainer);
+
+    // fee = floor(1000 * 500 / 10_000) = 50
+    let stats = client.get_fee_stats();
+    assert_eq!(stats.total_collected, 50);
+    assert_eq!(stats.bounty_count, 1);
+}
+
+/// get_fee_stats accumulates correctly across multiple releases.
+#[test]
+fn test_get_fee_stats_multiple_releases() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    // Mint enough for three bounties of 1000 each
+    token_admin.mint(&maintainer, &3000);
+
+    let fee_bps = 100u32; // 1%
+
+    for issue in 1u32..=3u32 {
+        let deadline = env.ledger().timestamp() + 1000;
+        let id = client.create_bounty(
+            &maintainer,
+            &token_id,
+            &1000,
+            &String::from_str(&env, "repo"),
+            &issue,
+            &String::from_str(&env, "title"),
+            &deadline,
+            &fee_bps,
+        );
+        client.reserve_bounty(&id, &contributor);
+        client.submit_bounty(&id, &contributor);
+        client.release_bounty(&id, &maintainer);
+    }
+
+    // fee per bounty = floor(1000 * 100 / 10_000) = 10 → total = 30
+    let stats = client.get_fee_stats();
+    assert_eq!(stats.total_collected, 30);
+    assert_eq!(stats.bounty_count, 3);
+}
+
+/// get_fee_stats counts zero fees correctly when fee_bps is 0.
+#[test]
+fn test_get_fee_stats_zero_fee_bps() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &500);
+
+    let deadline = env.ledger().timestamp() + 1000;
     let bounty_id = client.create_bounty(
         &maintainer,
         &token_id,
@@ -751,21 +845,55 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &deadline,
+        &0u32, // no fee
+    );
 
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.release_bounty(&bounty_id, &maintainer);
+
+    // bounty_count still increments even with 0% fee
+    let stats = client.get_fee_stats();
+    assert_eq!(stats.total_collected, 0);
+    assert_eq!(stats.bounty_count, 1);
+}
+
+/// FeeStats is updated via the dispute release path as well.
+#[test]
+fn test_get_fee_stats_dispute_release_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let deadline = env.ledger().timestamp() + 1000;
     let bounty_id = client.create_bounty(
         &maintainer,
         &token_id,
-        &500,
+        &1000,
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &deadline,
+        &200u32, // 2% fee
+    );
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    // Raise dispute
+    client.dispute_bounty(&bounty_id, &arbiter);
 
+    // Advance time past dispute window (600 s configured in setup_test)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 601);
+
+    // Arbiter resolves in favour of the contributor (release = true)
+    client.resolve_dispute(&bounty_id, &true);
+
+    // fee = floor(1000 * 200 / 10_000) = 20
+    let stats = client.get_fee_stats();
+    assert_eq!(stats.total_collected, 20);
+    assert_eq!(stats.bounty_count, 1);
 }
