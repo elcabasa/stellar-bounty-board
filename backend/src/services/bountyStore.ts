@@ -1355,6 +1355,21 @@ export async function getGlobalMetricsCached(
   return metrics;
 }
 
+/**
+ * Export object for aggregated metrics that can be reused across the application.
+ * Provides both synchronous and cached variants of global metrics computation.
+ */
+export const aggregatedMetrics = {
+  /**
+   * Synchronous computation of global metrics.
+   */
+  getSync: getGlobalMetrics,
+  /**
+   * Cached computation of global metrics with 30-second TTL.
+   */
+  getCached: getGlobalMetricsCached,
+};
+
 export interface LeaderboardEntry {
   /** The Stellar address of the contributor. */
   address: string;
