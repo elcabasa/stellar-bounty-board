@@ -742,30 +742,55 @@ fn test_extend_deadline_earlier() {
     client.extend_deadline(&bounty_id, &maintainer, &earlier_deadline);
 }
 
+/// MAX_BOUNTY_AMOUNT is exactly 10_000_000_000_0000000 stroops.
+/// A bounty at this exact limit must be accepted.
 #[test]
+fn test_create_bounty_at_max_amount_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, _, token_id, _, _) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    // Mint exactly MAX_BOUNTY_AMOUNT to the maintainer
+    let max_amount: i128 = 10_000_000_000_0000000;
+    token_admin.mint(&maintainer, &max_amount);
 
     let bounty_id = client.create_bounty(
         &maintainer,
         &token_id,
-        &500,
+        &max_amount,
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
 
-    let bounty_id = client.create_bounty(
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.amount, max_amount);
+    assert_eq!(bounty.status, BountyStatus::Open);
+}
+
+/// A bounty one stroop above MAX_BOUNTY_AMOUNT must be rejected with InvalidAmount.
+#[test]
+#[should_panic(expected = "InvalidAmount")]
+fn test_create_bounty_above_max_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, _, token_id, _, _) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    let over_max: i128 = 10_000_000_000_0000000 + 1;
+    token_admin.mint(&maintainer, &over_max);
+
+    client.create_bounty(
         &maintainer,
         &token_id,
-        &500,
+        &over_max,
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
-
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
-
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
 }
