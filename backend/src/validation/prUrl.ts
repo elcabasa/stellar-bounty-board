@@ -33,3 +33,23 @@ export const githubPrUrlSchema = z
     (url) => GITHUB_PR_URL_REGEX.test(url),
     { message: "Submission URL must follow format https://github.com/<owner>/<repo>/pull/<number>" },
   );
+
+export function extractGithubPrRepo(submissionUrl: string): string | undefined {
+  const parsedUrl = new URL(submissionUrl);
+  const [owner, repo, segment] = parsedUrl.pathname.split("/").filter(Boolean);
+  if (parsedUrl.hostname !== "github.com" || !owner || !repo || segment !== "pull") {
+    return undefined;
+  }
+  return `${owner}/${repo}`;
+}
+
+export function validateGithubPrUrlForRepo(submissionUrl: string, bountyRepo: string): void {
+  githubPrUrlSchema.parse(submissionUrl);
+
+  // PR submissions must target the same GitHub owner/repo as the bounty so contributors cannot
+  // satisfy a bounty with an unrelated pull request URL.
+  const prRepo = extractGithubPrRepo(submissionUrl);
+  if (prRepo !== bountyRepo) {
+    throw new Error(`Submission URL repository must match bounty repo ${bountyRepo}.`);
+  }
+}
