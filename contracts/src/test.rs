@@ -743,6 +743,13 @@ fn test_extend_deadline_earlier() {
 }
 
 #[test]
+fn test_snapshot_reserve_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
 
     let bounty_id = client.create_bounty(
         &maintainer,
@@ -751,6 +758,21 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+}
+
+#[test]
+fn test_snapshot_submit_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
 
     let bounty_id = client.create_bounty(
         &maintainer,
@@ -759,6 +781,22 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+}
+
+#[test]
+fn test_snapshot_release_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
 
     let bounty_id = client.create_bounty(
         &maintainer,
@@ -767,5 +805,220 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
 
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.release_bounty(&bounty_id, &maintainer);
+}
+
+#[test]
+fn test_snapshot_extend_deadline() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, _contributor, token_id, _fee_recipient, _arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let initial_deadline = env.ledger().timestamp() + 1000;
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &initial_deadline,
+        &0u32,
+    );
+
+    let new_deadline = initial_deadline + 5000;
+    client.extend_deadline(&bounty_id, &maintainer, &new_deadline);
+}
+
+#[test]
+fn test_snapshot_dispute_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+}
+
+#[test]
+fn test_snapshot_resolve_dispute_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    // Advance time past dispute window (600 seconds)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 700);
+
+    client.resolve_dispute(&bounty_id, &true);
+}
+
+#[test]
+fn test_snapshot_resolve_dispute_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    // Advance time past dispute window (600 seconds)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 700);
+
+    client.resolve_dispute(&bounty_id, &false);
+}
+
+#[test]
+fn test_dispute_bounty() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Disputed);
+    assert!(bounty.dispute_raised_at > 0);
+}
+
+#[test]
+fn test_resolve_dispute_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token = TokenClient::new(&env, &token_id);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    // Advance time past dispute window (600 seconds)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 700);
+
+    client.resolve_dispute(&bounty_id, &true);
+
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Released);
+    assert_eq!(token.balance(&contributor), 500);
+}
+
+#[test]
+fn test_resolve_dispute_refund() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token = TokenClient::new(&env, &token_id);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let bounty_id = client.create_bounty(
+        &maintainer,
+        &token_id,
+        &500,
+        &String::from_str(&env, "repo"),
+        &1,
+        &String::from_str(&env, "title"),
+        &(env.ledger().timestamp() + 1000),
+        &0u32,
+    );
+
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+    client.dispute_bounty(&bounty_id, &arbiter);
+
+    // Advance time past dispute window (600 seconds)
+    env.ledger().set_timestamp(env.ledger().timestamp() + 700);
+
+    client.resolve_dispute(&bounty_id, &false);
+
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Refunded);
+    assert_eq!(token.balance(&maintainer), 1000);
 }
