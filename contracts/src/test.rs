@@ -743,7 +743,15 @@ fn test_extend_deadline_earlier() {
 }
 
 #[test]
+fn test_dispute_before_deadline_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
 
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let deadline = env.ledger().timestamp() + 1000;
     let bounty_id = client.create_bounty(
         &maintainer,
         &token_id,
@@ -751,7 +759,30 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &deadline,
+        &0u32,
+    );
 
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
+
+    // Dispute before deadline should succeed
+    client.dispute_bounty(&bounty_id, &arbiter);
+    let bounty = client.get_bounty(&bounty_id);
+    assert_eq!(bounty.status, BountyStatus::Disputed);
+}
+
+#[test]
+#[should_panic(expected = "BountyExpired")]
+fn test_dispute_after_deadline_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (client, maintainer, contributor, token_id, _fee_recipient, arbiter) = setup_test(&env);
+    let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_id);
+    token_admin.mint(&maintainer, &1000);
+
+    let deadline = env.ledger().timestamp() + 1000;
     let bounty_id = client.create_bounty(
         &maintainer,
         &token_id,
@@ -759,13 +790,16 @@ fn test_extend_deadline_earlier() {
         &String::from_str(&env, "repo"),
         &1,
         &String::from_str(&env, "title"),
+        &deadline,
+        &0u32,
+    );
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    client.reserve_bounty(&bounty_id, &contributor);
+    client.submit_bounty(&bounty_id, &contributor);
 
+    // Advance ledger timestamp past deadline
+    env.ledger().set_timestamp(deadline + 1);
+
+    // Dispute after deadline should fail
+    client.dispute_bounty(&bounty_id, &arbiter);
 }
