@@ -40,7 +40,15 @@ export function buildCorsOptions(): CorsOptions {
       }
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID", "X-Hub-Signature-256"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Request-ID",
+      "X-Hub-Signature-256",
+      "X-Stellar-Signature",
+      "X-Stellar-Public-Key",
+      "Idempotency-Key",
+    ],
     credentials: true,
   };
 }
