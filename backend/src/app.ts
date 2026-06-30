@@ -26,6 +26,8 @@ import {
   getLeaderboard,
 } from './services/bountyStore';
 
+import { listOpenIssues } from './services/openIssues';
+
 import {
   bountyIdSchema,
   createBountySchema,
@@ -738,11 +740,7 @@ app.post(
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
   try {
-    const data = await listOpenIssues();
-    res.setHeader('Cache-Control', 'max-age=600');
-    res.json({ data });
-  } catch (error) {
-    sendError(res, _req, error, 500);
+
   }
 });
 

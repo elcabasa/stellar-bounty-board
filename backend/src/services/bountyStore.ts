@@ -10,7 +10,7 @@ import { getCache, type CacheAdapter } from "./cache";
  feat/concurrency-file-locking
 import { bountiesCreatedTotal, bountiesReleasedTotal } from "../metrics";
 import { validateGithubPrUrlForRepo } from "../validation/prUrl";
- main
+
 
 /**
  * Represents the current state of a bounty.
@@ -111,6 +111,8 @@ export interface BountyRecord {
   contributor?: string;
   /** Payment token symbol (e.g., XLM, USDC). */
   tokenSymbol: string;
+  /** Resolved payment token contract address. */
+  tokenAddress: string;
   /** The reward amount. */
   amount: number;
   /** Array of labels categorized on the bounty. */
@@ -237,6 +239,7 @@ const sampleBounties: BountyRecord[] = [
     maintainer: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
     contributor: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     tokenSymbol: "XLM",
+    tokenAddress: "CAS3J7YBBURBV347V3UAEAOAT2IZU7QHWG7YWCOOOFLBEBGKND655DHA",
     amount: 150,
     labels: ["help wanted", "realtime"],
     status: "reserved",
@@ -263,6 +266,7 @@ const sampleBounties: BountyRecord[] = [
       "Create a contributor-facing export view for released payouts with CSV download and per-asset grouping.",
     maintainer: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
     tokenSymbol: "USDC",
+    tokenAddress: "CCW677VKUVRVH25WJ3G7L2NKV6AEFBSFW4FG7L0XXXXXX",
     amount: 220,
     labels: ["frontend", "analytics"],
     status: "open",
@@ -664,6 +668,7 @@ export async function createBounty(
       summary: input.summary,
       maintainer: input.maintainer,
       tokenSymbol: input.tokenSymbol.toUpperCase(),
+      tokenAddress: resolveTokenAddress(input.tokenSymbol),
       amount: Number(input.amount.toFixed(2)),
       labels: input.labels,
       status: "open",
@@ -1237,17 +1242,6 @@ export function listBountyAuditLogs(
   const end = start + pageSize;
   const data = filtered.slice(start, end);
 
-
-  return {
-    data,
-    pagination: {
-      total,
-      page: safePage,
-      pageSize,
-      totalPages,
-    },
-  };
-}
 
 
 export function getBountyEvents(bountyId: string): BountyEvent[] {
