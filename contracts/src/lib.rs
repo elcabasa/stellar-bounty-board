@@ -8,6 +8,10 @@ use soroban_sdk::{
     token::Client as TokenClient, Address, Env, String,
 };
 
+// ─── Contract Version ─────────────────────────────────────────────────────────
+/// Semver string pulled from Cargo.toml at compile time.
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BountyStatus {
@@ -148,6 +152,14 @@ pub struct StellarBountyBoardContract;
 
 #[contractimpl]
 impl StellarBountyBoardContract {
+    // ─── Version ─────────────────────────────────────────────────────────────
+    /// Returns the contract version as a semver string (e.g. "0.1.0").
+    pub fn get_version(_env: Env) -> String {
+        // We use _env because String::from_str needs it, but in future
+        // Soroban SDK versions this may be optional for static strings.
+        String::from_str(&_env, CONTRACT_VERSION)
+    }
+    
     pub fn initialize(env: Env, fee_recipient: Address, arbiter: Address, dispute_window: u64) {
         // Prevent re-initialization
         if env.storage().persistent().has(&DataKey::FeeRecipient) {

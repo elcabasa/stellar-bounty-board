@@ -1,5 +1,4 @@
-import type { Request, RequestHandler } from "express";
-import { Keypair } from "@stellar/stellar-sdk";
+
 
 const HEADER_SIGNATURE = "x-stellar-signature";
 const HEADER_PUBLIC_KEY = "x-stellar-public-key";
@@ -218,3 +217,4 @@ export function createStellarSignatureAuthMiddleware(): RequestHandler {
     next();
   };
 }
+ main
