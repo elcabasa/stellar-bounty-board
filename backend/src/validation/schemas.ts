@@ -1,21 +1,24 @@
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 
-import { isValidStellarAddress } from '../utils';
+import { isValidStellarAddress, getTokenAddressMap } from '../utils';
 import { githubPrUrlSchema } from './prUrl';
 
 extendZodWithOpenApi(z);
 
 const REPO_REGEX = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const TOKEN_REGEX = /^[A-Za-z0-9]{1,12}$/;
-const DEFAULT_ALLOWED_TOKEN_SYMBOLS = ['XLM', 'USDC'];
 
 export function getAllowedTokenSymbols(): string[] {
   const configured = process.env.ALLOWED_TOKEN_SYMBOLS?.split(',')
     .map((symbol) => symbol.trim().toUpperCase())
     .filter(Boolean);
 
-  return configured && configured.length > 0 ? configured : DEFAULT_ALLOWED_TOKEN_SYMBOLS;
+  if (configured && configured.length > 0) {
+    return configured;
+  }
+
+  return Object.keys(getTokenAddressMap());
 }
 
 const STELLAR_EXAMPLE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF';
@@ -227,6 +230,13 @@ export const errorResponseSchema = z
   })
   .openapi('ErrorResponse');
 
+export const bountyEventSchema = z.object({
+  type: z.enum(['created', 'reserved', 'submitted', 'released', 'refunded', 'expired', 'disputed']),
+  timestamp: z.number(),
+  actor: z.string().optional(),
+  details: z.record(z.any()).optional(),
+});
+
 export const bountyRecordSchema = z
   .object({
     id: z.string().openapi({ example: 'BNT-0001' }),
@@ -239,6 +249,7 @@ export const bountyRecordSchema = z
     maintainer: z.string().openapi({ example: STELLAR_EXAMPLE }),
     contributor: z.string().optional().openapi({ example: STELLAR_EXAMPLE }),
     tokenSymbol: z.string().openapi({ example: 'XLM' }),
+    tokenAddress: z.string().openapi({ example: 'CAS3J7YBBURBV347V3UAEAOAT2IZU7QHWG7YWCOOOFLBEBGKND655DHA' }),
     amount: z.number().openapi({ example: 100 }),
     labels: z.array(z.string()).openapi({ example: ['bug', 'help wanted'] }),
     status: z
@@ -262,12 +273,22 @@ export const bountyRecordSchema = z
       .string()
       .optional()
       .openapi({ example: '0'.repeat(64) }),
+    canceledAt: z.number().optional().openapi({
+      example: 1710007200,
+      description: 'Unix timestamp (seconds) when an open bounty was canceled by the maintainer.',
+    }),
+    canceledTxHash: z
+      .string()
+      .optional()
+      .openapi({ example: '0'.repeat(64) }),
     submissionUrl: z
       .string()
       .optional()
       .openapi({ example: 'https://github.com/owner/repo/pull/99' }),
     notes: z.string().optional(),
-
+    version: z.number().openapi({ example: 1 }),
+    events: z.array(bountyEventSchema),
+    reservationTimeoutSeconds: z.number().optional().openapi({ example: 604800 }),
   })
   .openapi('BountyRecord');
 
@@ -298,7 +319,7 @@ export const bountyAuditLogSchema = z
       .enum(['open', 'reserved', 'submitted', 'released', 'refunded', 'expired'])
       .openapi({ example: 'reserved' }),
     transition: z
-      .enum(['reserve', 'submit', 'release', 'refund', 'expire', 'dispute', 'update_notes'])
+      .enum(['reserve', 'submit', 'release', 'refund', 'cancel', 'expire', 'dispute', 'update_notes'])
       .openapi({ example: 'reserve' }),
     actor: z.string().openapi({ example: STELLAR_EXAMPLE }),
     timestamp: z
@@ -338,6 +359,21 @@ export const healthResponseSchema = z
 
   })
   .openapi('HealthResponse');
+
+export const componentStatusSchema = z.enum(['up', 'down']);
+
+export const deepHealthResponseSchema = z
+  .object({
+    overall: componentStatusSchema,
+    components: z.object({
+      store: componentStatusSchema,
+      soroban: componentStatusSchema,
+      contract: componentStatusSchema,
+      auth: componentStatusSchema,
+    }),
+    timestamp: z.string(),
+  })
+  .openapi('DeepHealthResponse');
 
 export function zodErrorMessage(error: z.ZodError): string {
   return error.issues

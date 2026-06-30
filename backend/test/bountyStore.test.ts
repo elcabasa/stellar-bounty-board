@@ -261,7 +261,7 @@ describe("bountyStore — invalid transitions and errors", () => {
     await reserveBounty(b.id, CONTRIBUTOR);
     await expect(async () => await reserveBounty(b.id, CONTRIBUTOR)).rejects.toThrow(/only open/i);
 
-    await submitBounty(b.id, CONTRIBUTOR, "https://example.com/pr/1");
+    await submitBounty(b.id, CONTRIBUTOR, "https://github.com/acme/widget/pull/1");
     await expect(async () => await reserveBounty(b.id, CONTRIBUTOR)).rejects.toThrow(/only open/i);
 
     await releaseBounty(b.id, MAINTAINER);
@@ -296,10 +296,10 @@ describe("bountyStore — invalid transitions and errors", () => {
       labels: [],
     });
 
-    await expect(async () => await submitBounty(b.id, CONTRIBUTOR, "https://example.com/pr/1")).rejects.toThrow(/only reserved/i);
+    await expect(async () => await submitBounty(b.id, CONTRIBUTOR, "https://github.com/acme/widget/pull/1")).rejects.toThrow(/only reserved/i);
 
     await reserveBounty(b.id, CONTRIBUTOR);
-    await expect(async () => await submitBounty(b.id, OTHER_ACCOUNT, "https://example.com/pr/1")).rejects.toThrow(/reserved contributor/i);
+    await expect(async () => await submitBounty(b.id, OTHER_ACCOUNT, "https://github.com/acme/widget/pull/1")).rejects.toThrow(/reserved contributor/i);
   });
 
   it("release: requires maintainer and submitted status", async () => {
@@ -321,7 +321,7 @@ describe("bountyStore — invalid transitions and errors", () => {
     await reserveBounty(b.id, CONTRIBUTOR);
     await expect(async () => await releaseBounty(b.id, MAINTAINER)).rejects.toThrow(/only submitted/i);
 
-    await submitBounty(b.id, CONTRIBUTOR, "https://example.com/pr/1");
+    await submitBounty(b.id, CONTRIBUTOR, "https://github.com/acme/widget/pull/1");
     await expect(async () => await releaseBounty(b.id, OTHER_ACCOUNT)).rejects.toThrow(/maintainer address/i);
 
     const released = await releaseBounty(b.id, MAINTAINER);
@@ -357,7 +357,7 @@ describe("bountyStore — invalid transitions and errors", () => {
       labels: [],
     });
     await reserveBounty(flow.id, CONTRIBUTOR);
-    await submitBounty(flow.id, CONTRIBUTOR, "https://example.com/pr/1");
+    await submitBounty(flow.id, CONTRIBUTOR, "https://github.com/acme/widget/pull/1");
     await expect(async () => await refundBounty(flow.id, MAINTAINER)).rejects.toThrow(/submitted bounties/i);
 
     const rel = await createBounty({
@@ -372,7 +372,7 @@ describe("bountyStore — invalid transitions and errors", () => {
       labels: [],
     });
     await reserveBounty(rel.id, CONTRIBUTOR);
-    await submitBounty(rel.id, CONTRIBUTOR, "https://example.com/pr/1");
+    await submitBounty(rel.id, CONTRIBUTOR, "https://github.com/acme/widget/pull/1");
     await releaseBounty(rel.id, MAINTAINER);
     await expect(async () => await refundBounty(rel.id, MAINTAINER)).rejects.toThrow(/finalized/i);
 
@@ -389,6 +389,64 @@ describe("bountyStore — invalid transitions and errors", () => {
     });
     await refundBounty(ref.id, MAINTAINER);
     await expect(async () => await refundBounty(ref.id, MAINTAINER)).rejects.toThrow(/finalized/i);
+  });
+
+  it("cancel: succeeds on open bounty and records canceledAt", async () => {
+    const { createBounty, cancelBounty } = await loadStore();
+    const txHash = "c".repeat(64);
+
+    const created = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 50,
+      title: "Cancel open bounty title long enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 25,
+      deadlineDays: 30,
+      labels: [],
+    });
+
+    const canceled = await cancelBounty(created.id, MAINTAINER, txHash);
+    expect(canceled.status).toBe("refunded");
+    expect(canceled.canceledAt).toBeDefined();
+    expect(canceled.canceledTxHash).toBe(txHash);
+    expect(canceled.refundedAt).toBeUndefined();
+  });
+
+  it("cancel: rejects wrong maintainer and non-open status", async () => {
+    const { createBounty, reserveBounty, cancelBounty } = await loadStore();
+
+    const openB = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 51,
+      title: "Cancel wrong maintainer title enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 1,
+      deadlineDays: 30,
+      labels: [],
+    });
+    await expect(async () => await cancelBounty(openB.id, OTHER_ACCOUNT)).rejects.toThrow(
+      /maintainer address/i,
+    );
+
+    const reserved = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 52,
+      title: "Cancel reserved bounty title enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 1,
+      deadlineDays: 30,
+      labels: [],
+    });
+    await reserveBounty(reserved.id, CONTRIBUTOR);
+    await expect(async () => await cancelBounty(reserved.id, MAINTAINER)).rejects.toThrow(
+      /only open bounties/i,
+    );
   });
 });
 

@@ -20,6 +20,12 @@ const MUTATION_MAX = Number(process.env.RATE_LIMIT_MUTATION_MAX ?? 10);
 
 const isTest = process.env.NODE_ENV === "test";
 
+const HEALTH_PATHS = new Set(["/api/health", "/api/health/deep", "/worker/health"]);
+
+function isHealthPath(req: Request): boolean {
+  return HEALTH_PATHS.has(req.path);
+}
+
 /** No-op middleware so test suites can hit routes freely. */
 const passthrough: RequestHandler = (_req, _res, next) => next();
 
@@ -33,7 +39,9 @@ function makeLimiter(limit: number, options: { getOnly?: boolean } = {}): Reques
     standardHeaders: "draft-8",
     legacyHeaders: false,
     ipv6Subnet: 56,
-    ...(options.getOnly ? { skip: (req: Request) => req.method !== "GET" } : {}),
+    ...(options.getOnly
+      ? { skip: (req: Request) => req.method !== "GET" || isHealthPath(req) }
+      : {}),
     handler: (_req: Request, res: Response) => {
       res.setHeader("Retry-After", String(Math.ceil(WINDOW_MS / 1000)));
       res.status(429).json({ error: "Too many requests. Please retry later." });
@@ -52,4 +60,44 @@ export const limiter: RequestHandler = mutationLimiter;
 
 export function isValidStellarAddress(address: string): boolean {
   return StrKey.isValidEd25519PublicKey(address);
+}
+
+export function getTokenAddressMap(): Record<string, string> {
+  const map: Record<string, string> = {
+    XLM: 'CAS3J7YBBURBV347V3UAEAOAT2IZU7QHWG7YWCOOOFLBEBGKND655DHA',
+    USDC: 'CCW677VKUVRVH25WJ3G7L2NKV6AEFBSFW4FG7L0XXXXXX',
+  };
+
+  const mapStr = process.env.TOKEN_ADDRESS_MAP;
+  if (mapStr) {
+    try {
+      const parsed = JSON.parse(mapStr);
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === 'string') {
+          map[k.toUpperCase()] = v;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to parse TOKEN_ADDRESS_MAP env variable as JSON", err);
+    }
+  }
+
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value && (key.startsWith('TOKEN_ADDR_') || key.startsWith('TOKEN_ADDRESS_'))) {
+      const symbol = key.replace(/^(TOKEN_ADDR_|TOKEN_ADDRESS_)/, '').toUpperCase();
+      map[symbol] = value;
+    }
+  }
+
+  return map;
+}
+
+export function resolveTokenAddress(symbol: string): string {
+  const map = getTokenAddressMap();
+  const normalized = symbol.trim().toUpperCase();
+  const address = map[normalized];
+  if (!address) {
+    throw new Error(`Token symbol "${symbol}" cannot be resolved to a token address.`);
+  }
+  return address;
 }
