@@ -19,6 +19,7 @@ import {
   releaseBounty,
   reserveBounty,
   submitBounty,
+  updateBountyNotes,
   getBountyEvents,
   getMaintainerMetrics,
   getGlobalMetrics,
@@ -34,8 +35,8 @@ import {
   reserveBountySchema,
   submitBountySchema,
   updateNotesSchema,
-  zodErrorMessage,
 } from './validation/schemas';
+import { validateBody } from './middleware/validateBody';
 import { isValidStellarAddress } from './utils';
 
 import {
@@ -521,15 +522,9 @@ app.post(
   '/api/bounties',
   mutationLimiter,
   createBountyCreationSignatureMiddleware(),
+  validateBody(createBountySchema),
   async (req: Request, res: Response) => {
-    const parsed = createBountySchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsed.error));
-      return;
-    }
-
-    const amountError = validateBountyAmount(parsed.data.amount);
+    const amountError = validateBountyAmount(req.body.amount);
 
     if (amountError) {
       jsonError(res, req, 400, amountError);
@@ -537,7 +532,7 @@ app.post(
     }
 
     try {
-      const bounty = await createBounty(parsed.data);
+      const bounty = await createBounty(req.body);
       res.status(201).json({ data: bounty });
     } catch (error) {
       sendError(res, req, error);
@@ -545,19 +540,12 @@ app.post(
   }
 );
 
-app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
-  const parsedBody = reserveBountySchema.safeParse(req.body);
-
-  if (!parsedBody.success) {
-    jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-    return;
-  }
-
+app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, validateBody(reserveBountySchema), async (req: Request, res: Response) => {
   try {
     const bounty = await reserveBounty(
       parseId(req.params.id),
-      parsedBody.data.contributor,
-      parsedBody.data.expectedVersion
+      req.body.contributor,
+      req.body.expectedVersion
     );
 
     res.json({ data: bounty });
@@ -566,20 +554,13 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, as
   }
 });
 
-app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
-  const parsedBody = submitBountySchema.safeParse(req.body);
-
-  if (!parsedBody.success) {
-    jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-    return;
-  }
-
+app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, validateBody(submitBountySchema), async (req: Request, res: Response) => {
   try {
     const bounty = await submitBounty(
       parseId(req.params.id),
-      parsedBody.data.contributor,
-      parsedBody.data.submissionUrl,
-      parsedBody.data.notes
+      req.body.contributor,
+      req.body.submissionUrl,
+      req.body.notes
     );
 
     res.json({ data: bounty });
@@ -593,19 +574,13 @@ app.post(
   mutationLimiter,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
+  validateBody(maintainerActionSchema),
   async (req: Request, res: Response) => {
-    const parsedBody = maintainerActionSchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await releaseBounty(
         parseId(req.params.id),
-        parsedBody.data.maintainer,
-        parsedBody.data.transactionHash
+        req.body.maintainer,
+        req.body.transactionHash
       );
 
       res.json({ data: bounty });
@@ -620,19 +595,13 @@ app.post(
   mutationLimiter,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
+  validateBody(maintainerActionSchema),
   async (req: Request, res: Response) => {
-    const parsedBody = maintainerActionSchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await refundBounty(
         parseId(req.params.id),
-        parsedBody.data.maintainer,
-        parsedBody.data.transactionHash
+        req.body.maintainer,
+        req.body.transactionHash
       );
 
       res.json({ data: bounty });
@@ -646,19 +615,13 @@ app.post(
   '/api/bounties/:id/dispute',
   mutationLimiter,
   createStellarSignatureAuthMiddleware(),
+  validateBody(disputeBountySchema),
   async (req: Request, res: Response) => {
-    const parsedBody = disputeBountySchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await disputeBounty(
         parseId(req.params.id),
-        parsedBody.data.contributor,
-        parsedBody.data.reason
+        req.body.contributor,
+        req.body.reason
       );
 
       res.json({ data: bounty });
@@ -672,19 +635,13 @@ app.patch(
   '/api/bounties/:id/notes',
   mutationLimiter,
   createStellarSignatureAuthMiddleware(),
+  validateBody(updateNotesSchema),
   async (req: Request, res: Response) => {
-    const parsedBody = updateNotesSchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await updateBountyNotes(
         parseId(req.params.id),
-        parsedBody.data.maintainer,
-        parsedBody.data.notes
+        req.body.maintainer,
+        req.body.notes
       );
 
       res.json({ data: bounty });
