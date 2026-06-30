@@ -132,6 +132,8 @@ export interface BountyRecord {
   releasedAt?: number;
   /** Stellar transaction hash of the release payment. */
   releasedTxHash?: string;
+  /** Protocol fee collected when this bounty was released (in token units). */
+  protocolFeeCollected?: number;
   /** Unix timestamp in seconds of when the bounty was refunded. */
   refundedAt?: number;
   /** Stellar transaction hash of the refund payment. */
@@ -863,6 +865,7 @@ export async function submitBounty(
  * @param {string} id - The unique ID of the bounty.
  * @param {string} maintainer - The Stellar address of the maintainer releasing the bounty.
  * @param {string} [transactionHash] - Optional Stellar transaction hash for the payment.
+ * @param {number} [protocolFeeCollected=0] - Protocol fee amount collected for this release.
  * @returns {Promise<BountyRecord>} A promise that resolves to the updated bounty record.
  * @throws {Error} If the bounty is not found.
  * @throws {Error} If the maintainer address does not match the maintainer who created the bounty.
@@ -872,6 +875,7 @@ export async function releaseBounty(
   id: string,
   maintainer: string,
   transactionHash?: string,
+  protocolFeeCollected = 0,
 ): Promise<BountyRecord> {
   return withStoreLock(async () => {
     const records = listBounties();
@@ -892,6 +896,7 @@ export async function releaseBounty(
       releasedTxHash: transactionHash?.trim()
         ? transactionHash.trim()
         : bounty.releasedTxHash,
+      protocolFeeCollected: protocolFeeCollected > 0 ? protocolFeeCollected : (bounty.protocolFeeCollected ?? 0),
       version: bounty.version + 1,
       events: [
         ...bounty.events,
@@ -1310,26 +1315,7 @@ export function getBountyEvents(bountyId: string): BountyEvent[] {
   return bounty.events || [];
 }
 
-export function getMaintainerMetrics(maintainer: string): { totalBountiesCreated: number; totalBountiesReleased: number; totalAmount: number } {
-  const records = listBounties();
-  const created = records.filter(b => b.maintainer === maintainer).length;
-  const released = records.filter(b => b.maintainer === maintainer && b.status === 'released').length;
-  const totalAmount = records
-    .filter(b => b.maintainer === maintainer && b.status === 'released')
-    .reduce((sum, b) => sum + b.amount, 0);
-  return { totalBountiesCreated: created, totalBountiesReleased: released, totalAmount };
-}
 
-export function getGlobalMetrics(): { totalBounties: number; totalOpen: number; totalReserved: number; totalSubmitted: number; totalReleased: number; totalRefunded: number; totalExpired: number } {
-  const records = listBounties();
-  return {
-    totalBounties: records.length,
-    totalOpen: records.filter(b => b.status === 'open').length,
-    totalReserved: records.filter(b => b.status === 'reserved').length,
-    totalSubmitted: records.filter(b => b.status === 'submitted').length,
-    totalReleased: records.filter(b => b.status === 'released').length,
-    totalRefunded: records.filter(b => b.status === 'refunded').length,
-    totalExpired: records.filter(b => b.status === 'expired').length,
   };
 }
  feat/concurrency-file-locking
