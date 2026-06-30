@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import CopyIcon from "./CopyIcons";
+import ContributorDashboard from "./ContributorDashboard";
+import { listBounties } from "./api";
 import type { Bounty } from "./types";
 
 function shortAddress(value: string): string {
@@ -28,6 +30,7 @@ export default function ContributorProfilePage({
   onBack?: () => void;
 }) {
   const [bounties, setBounties] = useState<Bounty[]>([]);
+  const [allBounties, setAllBounties] = useState<Bounty[]>([]);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +42,14 @@ export default function ContributorProfilePage({
       })
       .catch((err) => {
         if (active) setError(err instanceof Error ? err.message : String(err));
+      });
+
+    void listBounties()
+      .then((data) => {
+        if (active) setAllBounties(data);
+      })
+      .catch(() => {
+        if (active) setAllBounties([]);
       });
 
     void fetchLeaderboard().then((data) => {
@@ -93,6 +104,8 @@ export default function ContributorProfilePage({
       </header>
 
       {error && <div className="error">{error}</div>}
+
+      <ContributorDashboard bounties={allBounties} loading={allBounties.length === 0 && !error} />
 
       <section className="metrics">
         <div>

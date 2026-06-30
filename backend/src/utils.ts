@@ -20,6 +20,12 @@ const MUTATION_MAX = Number(process.env.RATE_LIMIT_MUTATION_MAX ?? 10);
 
 const isTest = process.env.NODE_ENV === "test";
 
+const HEALTH_PATHS = new Set(["/api/health", "/api/health/deep", "/worker/health"]);
+
+function isHealthPath(req: Request): boolean {
+  return HEALTH_PATHS.has(req.path);
+}
+
 /** No-op middleware so test suites can hit routes freely. */
 const passthrough: RequestHandler = (_req, _res, next) => next();
 
@@ -33,7 +39,9 @@ function makeLimiter(limit: number, options: { getOnly?: boolean } = {}): Reques
     standardHeaders: "draft-8",
     legacyHeaders: false,
     ipv6Subnet: 56,
-    ...(options.getOnly ? { skip: (req: Request) => req.method !== "GET" } : {}),
+    ...(options.getOnly
+      ? { skip: (req: Request) => req.method !== "GET" || isHealthPath(req) }
+      : {}),
     handler: (_req: Request, res: Response) => {
       res.setHeader("Retry-After", String(Math.ceil(WINDOW_MS / 1000)));
       res.status(429).json({ error: "Too many requests. Please retry later." });

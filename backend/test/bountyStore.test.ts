@@ -390,6 +390,64 @@ describe("bountyStore — invalid transitions and errors", () => {
     await refundBounty(ref.id, MAINTAINER);
     await expect(async () => await refundBounty(ref.id, MAINTAINER)).rejects.toThrow(/finalized/i);
   });
+
+  it("cancel: succeeds on open bounty and records canceledAt", async () => {
+    const { createBounty, cancelBounty } = await loadStore();
+    const txHash = "c".repeat(64);
+
+    const created = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 50,
+      title: "Cancel open bounty title long enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 25,
+      deadlineDays: 30,
+      labels: [],
+    });
+
+    const canceled = await cancelBounty(created.id, MAINTAINER, txHash);
+    expect(canceled.status).toBe("refunded");
+    expect(canceled.canceledAt).toBeDefined();
+    expect(canceled.canceledTxHash).toBe(txHash);
+    expect(canceled.refundedAt).toBeUndefined();
+  });
+
+  it("cancel: rejects wrong maintainer and non-open status", async () => {
+    const { createBounty, reserveBounty, cancelBounty } = await loadStore();
+
+    const openB = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 51,
+      title: "Cancel wrong maintainer title enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 1,
+      deadlineDays: 30,
+      labels: [],
+    });
+    await expect(async () => await cancelBounty(openB.id, OTHER_ACCOUNT)).rejects.toThrow(
+      /maintainer address/i,
+    );
+
+    const reserved = await createBounty({
+      repo: "acme/widget",
+      issueNumber: 52,
+      title: "Cancel reserved bounty title enough",
+      summary: "Summary with twenty or more characters here.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "XLM",
+      amount: 1,
+      deadlineDays: 30,
+      labels: [],
+    });
+    await reserveBounty(reserved.id, CONTRIBUTOR);
+    await expect(async () => await cancelBounty(reserved.id, MAINTAINER)).rejects.toThrow(
+      /only open bounties/i,
+    );
+  });
 });
 
 

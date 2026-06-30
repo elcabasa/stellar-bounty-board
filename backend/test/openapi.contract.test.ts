@@ -4,6 +4,7 @@ import { app } from '../src/app';
 import {
   bountyRecordSchema,
   createBountySchema,
+  deepHealthResponseSchema,
   healthResponseSchema,
   submitBountySchema,
   reserveBountySchema,
