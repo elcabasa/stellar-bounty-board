@@ -5,6 +5,7 @@ import BountyCountdown from "./BountyCountdown";
 import UsdAmount from "./UsdAmount";
 import { updateSocialMetaTags } from "./metaTags";
 import CopyIcon from "./CopyIcons";
+import { extendDeadline } from "./api";
 
 
 type BountyAction = "reserve" | "submit" | "release" | "refund";
@@ -349,6 +350,11 @@ export default function BountyDetailPage({
               )}
             </div>
 
+            {owner === bounty.maintainer &&
+              !["released", "refunded"].includes(bounty.status) && (
+                <ExtendDeadlineControl bounty={bounty} formatTimestamp={formatTimestamp} />
+              )}
+
             {bounty.events && bounty.events.length > 0 && (
               <BountyTimeline events={bounty.events} formatTimestamp={formatTimestamp} />
             )}
@@ -356,5 +362,104 @@ export default function BountyDetailPage({
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * Maintainer-only control to extend a bounty's deadline. Renders a date/time
+ * picker and submits the new deadline to the backend. The picker is bounded so
+ * a maintainer can only pick a moment strictly after the current deadline.
+ */
+export function ExtendDeadlineControl({
+  bounty,
+  formatTimestamp,
+}: {
+  bounty: Bounty;
+  formatTimestamp: (value?: number) => string;
+}) {
+  const [value, setValue] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // datetime-local needs a "YYYY-MM-DDTHH:mm" string in local time. The minimum
+  // selectable value is one minute after the current deadline.
+  const minLocal = toDatetimeLocal((bounty.deadlineAt + 60) * 1000);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+
+    if (!value) {
+      setError("Pick a new deadline date and time.");
+      return;
+    }
+
+    const newDeadline = Math.floor(new Date(value).getTime() / 1000);
+    if (Number.isNaN(newDeadline)) {
+      setError("That is not a valid date.");
+      return;
+    }
+    if (newDeadline <= bounty.deadlineAt) {
+      setError("New deadline must be later than the current deadline.");
+      return;
+    }
+    if (newDeadline <= Math.floor(Date.now() / 1000)) {
+      setError("New deadline must be in the future.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const updated = await extendDeadline(bounty.id, bounty.maintainer, newDeadline);
+      setSuccess(`Deadline extended to ${formatTimestamp(updated.deadlineAt)}.`);
+      setValue("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to extend the deadline.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="extend-deadline" onSubmit={handleSubmit}>
+      <label htmlFor="extend-deadline-input" className="meta-label">
+        Extend deadline
+      </label>
+      <div className="extend-deadline__row">
+        <input
+          id="extend-deadline-input"
+          type="datetime-local"
+          value={value}
+          min={minLocal}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={submitting}
+        />
+        <button type="submit" className="secondary-button" disabled={submitting || !value}>
+          {submitting ? "Extending…" : "Extend Deadline"}
+        </button>
+      </div>
+      {error && (
+        <small className="field-error" role="alert">
+          {error}
+        </small>
+      )}
+      {success && (
+        <small className="field-hint" role="status">
+          {success}
+        </small>
+      )}
+    </form>
+  );
+}
+
+/** Convert a millisecond epoch to a `datetime-local`-compatible local string. */
+function toDatetimeLocal(epochMs: number): string {
+  const d = new Date(epochMs);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
   );
 }

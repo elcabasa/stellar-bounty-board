@@ -582,3 +582,58 @@ describe("bountyStore — event history and metrics", () => {
     expect(reserved.events.some((e) => e.type === "reserved")).toBe(true);
   });
 });
+
+describe("extendDeadline", () => {
+  async function seed() {
+    const { createBounty } = await loadStore();
+    return createBounty({
+      repo: "acme/widget",
+      issueNumber: 7,
+      title: "Extend deadline unit test bounty",
+      summary: "A bounty used to exercise the extendDeadline store function directly.",
+      maintainer: MAINTAINER,
+      tokenSymbol: "usdc",
+      amount: 100,
+      deadlineDays: 14,
+      labels: [],
+    });
+  }
+
+  it("advances the deadline and appends a deadline_extended event", async () => {
+    const { extendDeadline } = await loadStore();
+    const bounty = await seed();
+    const newDeadline = bounty.deadlineAt + 3 * 24 * 60 * 60;
+
+    const updated = await extendDeadline(bounty.id, MAINTAINER, newDeadline);
+
+    expect(updated.deadlineAt).toBe(newDeadline);
+    expect(updated.version).toBe(bounty.version + 1);
+    const event = updated.events.find((e) => e.type === "deadline_extended");
+    expect(event).toBeDefined();
+    expect(event?.actor).toBe(MAINTAINER);
+    expect(event?.details?.previousDeadline).toBe(bounty.deadlineAt);
+    expect(event?.details?.newDeadline).toBe(newDeadline);
+  });
+
+  it("rejects a non-maintainer caller", async () => {
+    const { extendDeadline } = await loadStore();
+    const bounty = await seed();
+    await expect(
+      extendDeadline(bounty.id, OTHER_ACCOUNT, bounty.deadlineAt + 1000),
+    ).rejects.toThrow(/does not match/i);
+  });
+
+  it("rejects a deadline that is not later than the current one", async () => {
+    const { extendDeadline } = await loadStore();
+    const bounty = await seed();
+    await expect(
+      extendDeadline(bounty.id, MAINTAINER, bounty.deadlineAt),
+    ).rejects.toThrow(/later than the current deadline/i);
+  });
+
+  it("rejects a deadline in the past", async () => {
+    const { extendDeadline } = await loadStore();
+    const bounty = await seed();
+    await expect(extendDeadline(bounty.id, MAINTAINER, 1)).rejects.toThrow(/future/i);
+  });
+});
