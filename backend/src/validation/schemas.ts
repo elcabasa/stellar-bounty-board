@@ -245,6 +245,14 @@ export const bountyRecordSchema = z
       .string()
       .optional()
       .openapi({ example: '0'.repeat(64) }),
+    canceledAt: z.number().optional().openapi({
+      example: 1710007200,
+      description: 'Unix timestamp (seconds) when an open bounty was canceled by the maintainer.',
+    }),
+    canceledTxHash: z
+      .string()
+      .optional()
+      .openapi({ example: '0'.repeat(64) }),
     submissionUrl: z
       .string()
       .optional()
@@ -281,7 +289,7 @@ export const bountyAuditLogSchema = z
       .enum(['open', 'reserved', 'submitted', 'released', 'refunded', 'expired'])
       .openapi({ example: 'reserved' }),
     transition: z
-      .enum(['reserve', 'submit', 'release', 'refund', 'expire', 'dispute', 'update_notes'])
+      .enum(['reserve', 'submit', 'release', 'refund', 'cancel', 'expire', 'dispute', 'update_notes'])
       .openapi({ example: 'reserve' }),
     actor: z.string().openapi({ example: STELLAR_EXAMPLE }),
     timestamp: z
@@ -318,9 +326,26 @@ export const bountyAuditLogListResponseSchema = z
 
 export const healthResponseSchema = z
   .object({
-
+    service: z.string(),
+    status: z.string(),
+    timestamp: z.string(),
   })
   .openapi('HealthResponse');
+
+export const componentStatusSchema = z.enum(['up', 'down']);
+
+export const deepHealthResponseSchema = z
+  .object({
+    overall: componentStatusSchema,
+    components: z.object({
+      store: componentStatusSchema,
+      soroban: componentStatusSchema,
+      contract: componentStatusSchema,
+      auth: componentStatusSchema,
+    }),
+    timestamp: z.string(),
+  })
+  .openapi('DeepHealthResponse');
 
 export function zodErrorMessage(error: z.ZodError): string {
   return error.issues
