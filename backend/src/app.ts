@@ -26,6 +26,8 @@ import {
   getLeaderboard,
 } from './services/bountyStore';
 
+import { listOpenIssues } from './services/openIssues';
+
 import {
   bountyIdSchema,
   createBountySchema,
@@ -718,7 +720,12 @@ app.post(
 );
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
-
+  try {
+    const issues = await listOpenIssues();
+    res.json({ data: issues });
+  } catch (error) {
+    sendError(res, _req, error);
+  }
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {

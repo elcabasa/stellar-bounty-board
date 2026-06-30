@@ -8,6 +8,7 @@ import { logStructured } from "../logger";
 import { getCache, type CacheAdapter } from "./cache";
 import { bountiesCreatedTotal, bountiesReleasedTotal } from "../metrics";
 import { validateGithubPrUrlForRepo } from "../validation/prUrl";
+import { resolveTokenAddress } from "../utils";
 
 /**
  * Represents the current state of a bounty.
@@ -107,6 +108,8 @@ export interface BountyRecord {
   contributor?: string;
   /** Payment token symbol (e.g., XLM, USDC). */
   tokenSymbol: string;
+  /** Resolved payment token contract address. */
+  tokenAddress: string;
   /** The reward amount. */
   amount: number;
   /** Array of labels categorized on the bounty. */
@@ -213,6 +216,7 @@ const sampleBounties: BountyRecord[] = [
     maintainer: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
     contributor: "GBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
     tokenSymbol: "XLM",
+    tokenAddress: "CAS3J7YBBURBV347V3UAEAOAT2IZU7QHWG7YWCOOOFLBEBGKND655DHA",
     amount: 150,
     labels: ["help wanted", "realtime"],
     status: "reserved",
@@ -239,6 +243,7 @@ const sampleBounties: BountyRecord[] = [
       "Create a contributor-facing export view for released payouts with CSV download and per-asset grouping.",
     maintainer: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
     tokenSymbol: "USDC",
+    tokenAddress: "CCW677VKUVRVH25WJ3G7L2NKV6AEFBSFW4FG7L0XXXXXX",
     amount: 220,
     labels: ["frontend", "analytics"],
     status: "open",
@@ -633,6 +638,7 @@ export async function createBounty(
       summary: input.summary,
       maintainer: input.maintainer,
       tokenSymbol: input.tokenSymbol.toUpperCase(),
+      tokenAddress: resolveTokenAddress(input.tokenSymbol),
       amount: Number(input.amount.toFixed(2)),
       labels: input.labels,
       status: "open",
@@ -1140,29 +1146,6 @@ export function listAllAuditLogs(
     all = all.filter((log) => log.toStatus === toStatus);
   }
   
-  const total = all.length;
-  const data = all.slice(offset, offset + limit);
-  const hasMore = offset + limit < total;
-  return {
-    data,
-    pagination: {
-      limit,
-      offset,
-      total,
-      hasMore,
-      nextOffset: hasMore ? offset + limit : null,
-    },
-  };
-}
-
-/**
- * Intended for admin use only — protect this with `createAdminApiKeyAuthMiddleware`.
- */
-export function listAllAuditLogs(
-  options: { limit?: number; offset?: number } = {},
-): AuditLogPage {
-  const { limit = 50, offset = 0 } = options;
-  const all = readAuditStore();
   const total = all.length;
   const data = all.slice(offset, offset + limit);
   const hasMore = offset + limit < total;

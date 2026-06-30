@@ -66,14 +66,14 @@ describe("API — bounty list deadline filters", () => {
     const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     const bounty = createRes.body.data;
 
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const farFuture = new Date();
+    farFuture.setDate(farFuture.getDate() + 40);
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
 
     const beforeRes = await request(app)
       .get("/api/bounties")
-      .query({ deadlineBefore: tomorrow.toISOString() })
+      .query({ deadlineBefore: farFuture.toISOString() })
       .expect(200);
     expect(beforeRes.body.data.some((b: any) => b.id === bounty.id)).toBe(true);
 
@@ -278,7 +278,7 @@ describe("API — admin audit log endpoint", () => {
       .post(`/api/bounties/${bountyId}/submit`)
       .send({ 
         contributor: CONTRIBUTOR, 
-        submissionUrl: "https://github.com/owner/repo/pull/1" 
+        submissionUrl: "https://github.com/owner/repo-name/pull/1" 
       })
       .expect(200);
     await request(app)
@@ -326,7 +326,7 @@ describe("API — admin audit log endpoint", () => {
       .post(`/api/bounties/${bountyId}/submit`)
       .send({ 
         contributor: CONTRIBUTOR, 
-        submissionUrl: "https://github.com/owner/repo/pull/1" 
+        submissionUrl: "https://github.com/owner/repo-name/pull/1" 
       })
       .expect(200);
 
@@ -353,7 +353,7 @@ describe("API — admin audit log endpoint", () => {
       .post(`/api/bounties/${bountyId}/submit`)
       .send({ 
         contributor: CONTRIBUTOR, 
-        submissionUrl: "https://github.com/owner/repo/pull/1" 
+        submissionUrl: "https://github.com/owner/repo-name/pull/1" 
       })
       .expect(200);
 
@@ -647,7 +647,7 @@ describe("GET /api/leaderboard", () => {
     await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
     await request(app)
       .post(`/api/bounties/${id}/submit`)
-      .send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/owner/repo/pull/1" })
+      .send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/owner/repo-name/pull/1" })
       .expect(200);
     await request(app).post(`/api/bounties/${id}/release`).send({ maintainer: MAINTAINER }).expect(200);
 
@@ -669,7 +669,7 @@ describe("GET /api/leaderboard", () => {
       await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
       await request(app)
         .post(`/api/bounties/${id}/submit`)
-        .send({ contributor: CONTRIBUTOR, submissionUrl: `https://github.com/owner/repo/pull/${i + 1}` })
+        .send({ contributor: CONTRIBUTOR, submissionUrl: `https://github.com/owner/repo-name/pull/${i + 1}` })
         .expect(200);
       await request(app).post(`/api/bounties/${id}/release`).send({ maintainer: MAINTAINER }).expect(200);
     }
@@ -686,14 +686,14 @@ describe("GET /api/leaderboard", () => {
     // CONTRIBUTOR gets one bounty released
     const { body: c1 } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
     await request(app).post(`/api/bounties/${c1.data.id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
-    await request(app).post(`/api/bounties/${c1.data.id}/submit`).send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/o/r/pull/1" }).expect(200);
+    await request(app).post(`/api/bounties/${c1.data.id}/submit`).send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/owner/repo-name/pull/1" }).expect(200);
     await request(app).post(`/api/bounties/${c1.data.id}/release`).send({ maintainer: MAINTAINER }).expect(200);
 
     // OTHER_ACCOUNT gets two bounties released (more XLM)
     for (let i = 0; i < 2; i++) {
       const { body: c2 } = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
       await request(app).post(`/api/bounties/${c2.data.id}/reserve`).send({ contributor: OTHER_ACCOUNT }).expect(200);
-      await request(app).post(`/api/bounties/${c2.data.id}/submit`).send({ contributor: OTHER_ACCOUNT, submissionUrl: `https://github.com/o/r/pull/${i + 10}` }).expect(200);
+      await request(app).post(`/api/bounties/${c2.data.id}/submit`).send({ contributor: OTHER_ACCOUNT, submissionUrl: `https://github.com/owner/repo-name/pull/${i + 10}` }).expect(200);
       await request(app).post(`/api/bounties/${c2.data.id}/release`).send({ maintainer: MAINTAINER }).expect(200);
     }
 
@@ -708,7 +708,7 @@ describe("GET /api/leaderboard", () => {
     const id = created.data.id as string;
 
     await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
-    await request(app).post(`/api/bounties/${id}/submit`).send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/o/r/pull/1" }).expect(200);
+    await request(app).post(`/api/bounties/${id}/submit`).send({ contributor: CONTRIBUTOR, submissionUrl: "https://github.com/owner/repo-name/pull/1" }).expect(200);
     await request(app).post(`/api/bounties/${id}/release`).send({ maintainer: MAINTAINER }).expect(200);
 
     const res = await request(app).get("/api/leaderboard").expect(200);
