@@ -46,9 +46,54 @@ export function redactStellarSecrets(value: unknown, seen = new WeakSet<object>(
  *    (`S...`, 56 chars) that slips into a message string or nested object,
  *    even when the field name is not in the redact path list (#381).
  */
+/**
+ * Pino's standard log levels, ordered by severity. `silent` disables output.
+ * Custom levels are not supported here; operators choose from this set via the
+ * `LOG_LEVEL` env var.
+ */
+export const VALID_LOG_LEVELS = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+  "silent",
+] as const;
+
+export const DEFAULT_LOG_LEVEL = "info";
+
+/**
+ * Resolve the effective log level from `LOG_LEVEL`.
+ *
+ * - Unset → defaults to `info`.
+ * - A recognized level (case-insensitive) → used as-is.
+ * - Anything else → falls back to `info` and the rejected value is reported
+ *   on `invalidValue` so the caller can emit a warning once the logger exists.
+ *
+ * Validating here (rather than passing the raw env var to pino) means an
+ * operator typo like `LOG_LEVEL=verbose` degrades to sane output instead of
+ * throwing at startup.
+ */
+export function resolveLogLevel(raw: string | undefined): {
+  level: string;
+  invalidValue?: string;
+} {
+  if (raw === undefined || raw === "") {
+    return { level: DEFAULT_LOG_LEVEL };
+  }
+  const normalized = raw.trim().toLowerCase();
+  if ((VALID_LOG_LEVELS as readonly string[]).includes(normalized)) {
+    return { level: normalized };
+  }
+  return { level: DEFAULT_LOG_LEVEL, invalidValue: raw };
+}
+
+const resolvedLevel = resolveLogLevel(process.env.LOG_LEVEL);
+
 /** Base pino options (exported so tests can build an identical logger). */
 export const baseLoggerOptions: pino.LoggerOptions = {
-  level: process.env.LOG_LEVEL ?? "info",
+  level: resolvedLevel.level,
   redact: {
     paths: [
       "req.headers.authorization",
@@ -85,6 +130,15 @@ export const logger = pino(
       })
     : undefined,
 );
+
+// Report an unusable LOG_LEVEL once the logger exists, so operators see why
+// their configured verbosity was ignored (#257).
+if (resolvedLevel.invalidValue !== undefined) {
+  logger.warn(
+    { invalidLogLevel: resolvedLevel.invalidValue, validLevels: VALID_LOG_LEVELS, fallback: DEFAULT_LOG_LEVEL },
+    `Invalid LOG_LEVEL "${resolvedLevel.invalidValue}"; falling back to "${DEFAULT_LOG_LEVEL}"`,
+  );
+}
 
 // ── Legacy shim ─────────────────────────────────────────────────────────────
 // Keeps existing callers of `logStructured` working without changes.
