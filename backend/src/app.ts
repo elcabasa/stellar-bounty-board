@@ -2,8 +2,7 @@ import cors from 'cors';
 import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
-import pinoHttp from 'pino-http';
-import { buildCorsOptions } from './middleware/corsOptions';
+
 import { generateOpenApiDocument } from './docs/openapi';
 import { getMetrics, httpRequestDuration } from './metrics';
 
@@ -95,13 +94,6 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
 
 export const app = express();
 
-app.use((_req: Request, res: Response, next: NextFunction) => {
-  if (draining) {
-    res.setHeader('Connection', 'close');
-    return res.status(503).json({ error: 'Service unavailable — server is shutting down' });
-  }
-  next();
-});
 
 app.use(cors(buildCorsOptions()));
 
