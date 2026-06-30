@@ -863,29 +863,90 @@ fn test_extend_deadline_earlier() {
 }
 
 #[test]
+fn test_xdr_round_trip_events() {
+    use soroban_sdk::xdr::{FromXdr, ToXdr};
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    let env = Env::default();
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    // 1. BountyCreated
+    let created = BountyCreated {
+        bounty_id: 42,
+        maintainer: Address::generate(&env),
+        token: Address::generate(&env),
+        amount: 10_000,
+        repo: String::from_str(&env, "ritik4ever/stellar-bounty-board"),
+        issue_number: 226,
+        protocol_fee_bps: 100,
+    };
+    let created_bytes = created.to_xdr(&env);
+    let created_decoded = BountyCreated::from_xdr(&env, &created_bytes).unwrap();
+    assert_eq!(created, created_decoded);
 
-    let bounty_id = client.create_bounty(
-        &maintainer,
-        &token_id,
-        &500,
-        &String::from_str(&env, "repo"),
-        &1,
-        &String::from_str(&env, "title"),
+    // 2. BountyReserved
+    let reserved = BountyReserved {
+        bounty_id: 42,
+        contributor: Address::generate(&env),
+    };
+    let reserved_bytes = reserved.to_xdr(&env);
+    let reserved_decoded = BountyReserved::from_xdr(&env, &reserved_bytes).unwrap();
+    assert_eq!(reserved, reserved_decoded);
 
+    // 3. BountySubmitted
+    let submitted = BountySubmitted {
+        bounty_id: 42,
+        contributor: Address::generate(&env),
+    };
+    let submitted_bytes = submitted.to_xdr(&env);
+    let submitted_decoded = BountySubmitted::from_xdr(&env, &submitted_bytes).unwrap();
+    assert_eq!(submitted, submitted_decoded);
+
+    // 4. BountyReleased
+    let released = BountyReleased {
+        bounty_id: 42,
+        contributor: Address::generate(&env),
+        amount: 9900,
+        fee_amount: 100,
+    };
+    let released_bytes = released.to_xdr(&env);
+    let released_decoded = BountyReleased::from_xdr(&env, &released_bytes).unwrap();
+    assert_eq!(released, released_decoded);
+
+    // 5. BountyRefunded
+    let refunded = BountyRefunded {
+        bounty_id: 42,
+        maintainer: Address::generate(&env),
+        amount: 10_000,
+    };
+    let refunded_bytes = refunded.to_xdr(&env);
+    let refunded_decoded = BountyRefunded::from_xdr(&env, &refunded_bytes).unwrap();
+    assert_eq!(refunded, refunded_decoded);
+
+    // 6. BountyDisputed
+    let disputed = BountyDisputed {
+        bounty_id: 42,
+        contributor: Address::generate(&env),
+        arbiter: Address::generate(&env),
+    };
+    let disputed_bytes = disputed.to_xdr(&env);
+    let disputed_decoded = BountyDisputed::from_xdr(&env, &disputed_bytes).unwrap();
+    assert_eq!(disputed, disputed_decoded);
+
+    // 7. BountyResolved
+    let resolved = BountyResolved {
+        bounty_id: 42,
+        arbiter: Address::generate(&env),
+        release: true,
+    };
+    let resolved_bytes = resolved.to_xdr(&env);
+    let resolved_decoded = BountyResolved::from_xdr(&env, &resolved_bytes).unwrap();
+    assert_eq!(resolved, resolved_decoded);
+
+    // 8. BountyDeadlineExtended
+    let extended = BountyDeadlineExtended {
+        bounty_id: 42,
+        new_deadline: 1719600000,
+    };
+    let extended_bytes = extended.to_xdr(&env);
+    let extended_decoded = BountyDeadlineExtended::from_xdr(&env, &extended_bytes).unwrap();
+    assert_eq!(extended, extended_decoded);
 }

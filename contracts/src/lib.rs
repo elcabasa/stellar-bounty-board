@@ -313,11 +313,7 @@ impl StellarBountyBoardContract {
             panic_error(ContractError::BountyMustBeSubmitted);
         }
 
-        let contributor = bounty
-            .contributor
-            .clone()
-            .unwrap();
-
+        let contributor = bounty.contributor.clone().unwrap();
 
         let token_client = TokenClient::new(&env, &bounty.token);
         let contract_address = env.current_contract_address();
