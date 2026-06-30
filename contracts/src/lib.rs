@@ -8,6 +8,10 @@ use soroban_sdk::{
     token::Client as TokenClient, Address, Env, String,
 };
 
+// ─── Contract Version ─────────────────────────────────────────────────────────
+/// Semver string pulled from Cargo.toml at compile time.
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BountyStatus {
@@ -102,6 +106,14 @@ pub struct BountyRefunded {
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyCanceled {
+    pub bounty_id: u64,
+    pub maintainer: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BountyDisputed {
     pub bounty_id: u64,
     pub contributor: Address,
@@ -152,6 +164,14 @@ pub struct StellarBountyBoardContract;
 
 #[contractimpl]
 impl StellarBountyBoardContract {
+    // ─── Version ─────────────────────────────────────────────────────────────
+    /// Returns the contract version as a semver string (e.g. "0.1.0").
+    pub fn get_version(_env: Env) -> String {
+        // We use _env because String::from_str needs it, but in future
+        // Soroban SDK versions this may be optional for static strings.
+        String::from_str(&_env, CONTRACT_VERSION)
+    }
+    
     pub fn initialize(env: Env, fee_recipient: Address, arbiter: Address, dispute_window: u64) {
         // Prevent re-initialization
         if env.storage().persistent().has(&DataKey::FeeRecipient) {
@@ -383,6 +403,34 @@ impl StellarBountyBoardContract {
         env.events().publish(
             (symbol_short!("Bounty"), symbol_short!("Refund")),
             BountyRefunded {
+                bounty_id,
+                maintainer,
+                amount: bounty.amount,
+            },
+        );
+    }
+
+    pub fn cancel_bounty(env: Env, bounty_id: u64, maintainer: Address) {
+        maintainer.require_auth();
+        let mut bounty = read_bounty(&env, bounty_id);
+
+        if bounty.maintainer != maintainer {
+            panic_error(ContractError::MaintainerMismatch);
+        }
+        if bounty.status != BountyStatus::Open {
+            panic_error(ContractError::BountyNotOpen);
+        }
+
+        let token_client = TokenClient::new(&env, &bounty.token);
+        let contract_address = env.current_contract_address();
+        token_client.transfer(&contract_address, &maintainer, &bounty.amount);
+
+        bounty.status = BountyStatus::Refunded;
+        write_bounty(&env, bounty_id, &bounty);
+
+        env.events().publish(
+            (symbol_short!("Bounty"), symbol_short!("Cancel")),
+            BountyCanceled {
                 bounty_id,
                 maintainer,
                 amount: bounty.amount,

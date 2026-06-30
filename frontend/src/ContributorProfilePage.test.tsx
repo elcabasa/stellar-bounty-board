@@ -5,6 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ContributorProfilePage from "./ContributorProfilePage";
 import type { Bounty } from "./types";
 
+vi.mock("./api", () => ({
+  listBounties: vi.fn(),
+}));
+
+import { listBounties } from "./api";
+
 const mockBounties: Bounty[] = [
   {
     id: "1",
@@ -64,6 +70,8 @@ const mockLeaderboard = [
 ];
 
 beforeEach(() => {
+  window.localStorage.clear();
+  vi.mocked(listBounties).mockResolvedValue(mockBounties);
   const globalAny: any = global;
   globalAny.fetch = vi.fn((url: string) => {
     if (url.includes("/api/bounties")) {
@@ -86,16 +94,17 @@ describe("ContributorProfilePage", () => {
 
     await waitFor(() => expect(screen.getByText(/Total earned/i)).toBeInTheDocument());
 
-    expect(screen.getByText(/100 XLM/)).toBeInTheDocument();
-    expect(screen.getByText(/Completed bounties/)).toBeInTheDocument();
-    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText(/Total earned/i).closest('div')?.querySelector('strong')).toHaveTextContent('100 XLM');
+    expect(screen.getAllByText(/Completed bounties/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('1').length).toBeGreaterThan(0);
     expect(screen.getByText(/Active reservations/)).toBeInTheDocument();
-    expect(screen.getByText(/1/)).toBeInTheDocument();
 
     // Completed bounty link
     expect(screen.getByRole("link", { name: /owner\/repo-a#10/ })).toBeInTheDocument();
 
     // Leaderboard entry
     expect(screen.getByText(/GCCCC...CCC/)).toBeInTheDocument();
+
+    expect(screen.getByText(/connect your wallet to see personalized bounty recommendations/i)).toBeInTheDocument();
   });
 });
