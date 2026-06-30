@@ -741,6 +741,18 @@ app.get('/api/bounties/:id', (req: Request, res: Response) => {
       return;
     }
 
+    res.setHeader('Cache-Control', 'max-age=5');
+
+    if (bounty.version !== undefined) {
+      const etag = `"${bounty.version}"`;
+      res.setHeader('ETag', etag);
+
+      if (req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
+    }
+
     res.json({ data: bounty });
   } catch (error) {
     sendError(res, req, error, 400);

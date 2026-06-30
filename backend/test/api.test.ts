@@ -739,3 +739,26 @@ describe("API — body size limit and JSON parse errors", () => {
     expect(res.body).toEqual({ error: "Invalid JSON" });
   });
 });
+
+describe("API — bounty caching", () => {
+  it("GET /api/bounties/:id returns ETag and handles conditional requests", async () => {
+    const app = await getApp();
+    const createRes = await request(app).post("/api/bounties").send(validCreateBody).expect(201);
+    const id = createRes.body.data.id as string;
+    
+    // First fetch
+    const fetch1 = await request(app).get(`/api/bounties/${id}`).expect(200);
+    expect(fetch1.headers).toHaveProperty('etag');
+    const etag = fetch1.headers.etag;
+    expect(fetch1.headers['cache-control']).toBe('max-age=5');
+    
+    // Second fetch with If-None-Match
+    await request(app).get(`/api/bounties/${id}`).set('If-None-Match', etag).expect(304);
+    
+    // Third fetch after version change (reserve bounty changes version)
+    await request(app).post(`/api/bounties/${id}/reserve`).send({ contributor: CONTRIBUTOR }).expect(200);
+    
+    const fetch3 = await request(app).get(`/api/bounties/${id}`).set('If-None-Match', etag).expect(200);
+    expect(fetch3.headers.etag).not.toBe(etag);
+  });
+});
