@@ -34,6 +34,7 @@ export interface Bounty {
   maintainer: string;
   contributor?: string;
   tokenSymbol: string;
+  tokenAddress?: string;
   amount: number;
   labels: GithubLabel[];
   tags?: string[];

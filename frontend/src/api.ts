@@ -298,6 +298,24 @@ export async function refundBounty(
   return body.data;
 }
 
+/**
+ * Extend a bounty's deadline. `newDeadline` is a Unix timestamp in seconds and
+ * must be in the future and later than the current deadline (enforced server-side).
+ */
+export async function extendDeadline(
+  id: string,
+  maintainer: string,
+  newDeadline: number
+): Promise<Bounty> {
+  const body = await requestJson<{ data: Bounty }>(`/bounties/${id}/extend-deadline`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maintainer, newDeadline }),
+  });
+
+  return body.data;
+}
+
 export async function listOpenIssues(signal?: AbortSignal): Promise<OpenIssue[]> {
   const body = await requestJson<{ data: OpenIssue[] }>('/open-issues', {
     retry: true,

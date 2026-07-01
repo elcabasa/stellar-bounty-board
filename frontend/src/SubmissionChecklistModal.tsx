@@ -9,6 +9,30 @@ export interface SubmissionFormData {
   notes: string;
 }
 
+/**
+ * Required pre-flight checklist. A contributor cannot submit a PR link until
+ * every one of these items has been explicitly acknowledged.
+ */
+export const CHECKLIST_ITEMS = [
+  {
+    id: "check-linked",
+    label: "PR is linked to the correct issue",
+    hint: "Your PR references the issue this bounty tracks",
+  },
+  {
+    id: "check-pr-desc",
+    label: "PR description explains the changes",
+    hint: "The PR has a clear title and description",
+  },
+  {
+    id: "check-ci",
+    label: "All CI checks pass",
+    hint: "Tests, lint, and build are green on the PR",
+  },
+] as const;
+
+type ChecklistId = (typeof CHECKLIST_ITEMS)[number]["id"];
+
 interface Props {
   bounty: Bounty;
   initialData?: Partial<SubmissionFormData>;
@@ -42,8 +66,16 @@ export default function SubmissionChecklistModal({
 }: Props) {
   const [contributor, setContributor] = useState(initialData?.contributor ?? bounty.contributor ?? "");
   const [prLink, setPrLink] = useState(initialData?.prLink ?? "");
-  const [testsWritten, setTestsWritten] = useState(initialData?.testsWritten ?? false);
+  const [testsWritten] = useState(initialData?.testsWritten ?? false);
   const [notes, setNotes] = useState(initialData?.notes ?? "");
+  const [checklist, setChecklist] = useState<Record<ChecklistId, boolean>>(() =>
+    CHECKLIST_ITEMS.reduce(
+      (acc, item) => ({ ...acc, [item.id]: false }),
+      {} as Record<ChecklistId, boolean>,
+    ),
+  );
+
+  const allChecked = CHECKLIST_ITEMS.every((item) => checklist[item.id]);
   const [touched, setTouched] = useState({ contributor: false, prLink: false });
 
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -118,7 +150,8 @@ export default function SubmissionChecklistModal({
   const isValid =
     STELLAR_PUBLIC_KEY_REGEX.test(contributor.trim()) &&
     prLink.trim() !== "" &&
-    validateUrl(prLink) === null;
+    validateUrl(prLink) === null &&
+    allChecked;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -198,36 +231,29 @@ export default function SubmissionChecklistModal({
             )}
           </label>
 
-          {/* Checklist items */}
+          {/* Required pre-flight checklist — submission is blocked until all are checked */}
           <fieldset className="checklist-fieldset">
-            <legend>Pre-submission checklist</legend>
+            <legend>Pre-submission checklist *</legend>
 
-            <ChecklistItem
-              id="check-tests"
-              checked={testsWritten}
-              onChange={setTestsWritten}
-              disabled={submitting}
-              label="Tests written or updated"
-              hint="Unit or integration tests cover the changes"
-            />
+            {CHECKLIST_ITEMS.map((item) => (
+              <ChecklistItem
+                key={item.id}
+                id={item.id}
+                checked={checklist[item.id]}
+                onChange={(value) =>
+                  setChecklist((prev) => ({ ...prev, [item.id]: value }))
+                }
+                disabled={submitting}
+                label={item.label}
+                hint={item.id === "check-linked" ? `Issue #${bounty.issueNumber} in ${bounty.repo}` : item.hint}
+              />
+            ))}
 
-            <ChecklistItem
-              id="check-pr-desc"
-              checked={true}
-              onChange={() => {}}
-              disabled={true}
-              label="PR description explains the changes"
-              hint="Your PR has a clear title and description"
-            />
-
-            <ChecklistItem
-              id="check-linked"
-              checked={true}
-              onChange={() => {}}
-              disabled={true}
-              label="PR is linked to this issue"
-              hint={`Issue #${bounty.issueNumber} in ${bounty.repo}`}
-            />
+            {!allChecked && (
+              <small className="field-hint checklist-fieldset__hint">
+                Check every item above to enable submission.
+              </small>
+            )}
           </fieldset>
 
           {/* Notes */}
@@ -254,7 +280,8 @@ export default function SubmissionChecklistModal({
             <button
               type="submit"
               className="primary-button"
-              disabled={submitting}
+              disabled={submitting || !isValid}
+              aria-disabled={submitting || !isValid}
             >
               {submitting ? "Submitting..." : "Submit work"}
             </button>

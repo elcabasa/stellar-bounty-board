@@ -1,2 +1,2 @@
 export { useLocalStorage } from './useLocalStorage';
-export { usePolling } from './usePolling';
+export { useWallet } from './useWallet';
