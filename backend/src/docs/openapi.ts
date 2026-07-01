@@ -8,6 +8,7 @@ import {
   createBountySchema,
   errorResponseSchema,
   healthResponseSchema,
+  deepHealthResponseSchema,
   maintainerActionSchema,
   openIssueSchema,
   reserveBountySchema,
@@ -32,6 +33,7 @@ registry.register("UpdateNotesRequest", updateNotesSchema);
 registry.register("ErrorResponse", errorResponseSchema);
 registry.register("OpenIssue", openIssueSchema);
 registry.register("HealthResponse", healthResponseSchema);
+registry.register("DeepHealthResponse", deepHealthResponseSchema);
 
 // ---------------------------------------------------------------------------
 // Reusable inline helpers
@@ -73,7 +75,7 @@ registry.registerPath({
   summary: "Health check",
   description: "Returns the service name and current server timestamp. Use this to verify the API is reachable.",
   responses: {
-    200: jsonResponse("Service is healthy.", z.object({ data: healthResponseSchema })),
+    200: jsonResponse("Service is healthy.", healthResponseSchema),
   },
 });
 
@@ -83,26 +85,13 @@ registry.registerPath({
   tags: ["System"],
   summary: "Deep health check",
   description:
-    "Extended health check that verifies critical configuration is in place. " +
-    "Returns component-level status including whether the arbiter address is configured. " +
-    "The arbiter is a trusted Stellar account that mediates bounty disputes: when a maintainer " +
-    "raises a dispute, only the configured arbiter may call `dispute_bounty` on the Soroban contract " +
-    "to resolve it in favour of either the contributor or the maintainer. " +
-    "If `components.arbiter` is `\"missing\"`, set `ARBITER_ADDRESS` in your environment.",
+    "Extended health check that verifies all external dependencies. " +
+    "Checks JSON store read/write, Soroban RPC reachability, contract ID configuration, " +
+    "and auth configuration (MAINTAINER_PUBLIC_KEY and ARBITER_ADDRESS). " +
+    "Excluded from rate limiting. Returns HTTP 503 when any critical component is down.",
   responses: {
-    200: jsonResponse(
-      "Service is healthy with component details.",
-      z.object({
-        service: z.string(),
-        status: z.string(),
-        timestamp: z.string(),
-        components: z.object({
-          arbiter: z.enum(["configured", "missing"]).openapi({
-            description: "Whether ARBITER_ADDRESS is set in the server environment.",
-          }),
-        }),
-      }),
-    ),
+    200: jsonResponse("All critical components are healthy.", deepHealthResponseSchema),
+    503: jsonResponse("One or more critical components are down.", deepHealthResponseSchema),
   },
 });
 
@@ -284,6 +273,27 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "post",
+  path: "/api/bounties/:id/cancel",
+  tags: ["Bounties"],
+  summary: "Cancel an open bounty",
+  description:
+    "Cancels an `open` bounty before any contributor has reserved it. " +
+    "Transitions the bounty to `refunded`, records a `canceledAt` timestamp, and returns the full escrow (no fee). " +
+    "Cannot be called on `reserved`, `submitted`, `released`, or already `refunded` bounties. " +
+    "Only the maintainer address recorded on the bounty may call this endpoint. " +
+    "Rate-limited to **5 requests per IP per minute**.",
+  request: {
+    params: z.object({ id: z.string().openapi(bountyIdParam.schema) }),
+    body: jsonBody(maintainerActionSchema),
+  },
+  responses: {
+    200: bountyDataResponse("Bounty canceled."),
+    400: errorResponse("Bounty not found, not open, maintainer mismatch, or validation failed."),
+  },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/bounties/:id/notes",
   tags: ["Bounties"],
@@ -437,7 +447,7 @@ export function generateOpenApiDocument() {
         "REST API for the Stellar Bounty Board — a platform for posting, reserving, submitting, " +
         "and releasing on-chain bounties backed by Stellar tokens.\n\n" +
         "**Bounty lifecycle:** `open` → `reserved` → `submitted` → `released`\n\n" +
-        "Maintainers may also `refund` an `open` or `reserved` bounty at any time. " +
+        "Maintainers may `cancel` an `open` bounty before reservation, or `refund` an `open` or `reserved` bounty after the deadline. " +
         "Bounties whose deadline passes are automatically transitioned to `expired`.",
     },
     servers: [{ url: "http://localhost:3001", description: "Local development server" }],

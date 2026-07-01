@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import pino from "pino";
 import { Keypair } from "@stellar/stellar-sdk";
-import { baseLoggerOptions, redactStellarSecrets } from "../src/logger";
+import {
+  baseLoggerOptions,
+  redactStellarSecrets,
+  resolveLogLevel,
+  DEFAULT_LOG_LEVEL,
+  VALID_LOG_LEVELS,
+} from "../src/logger";
 
 const SECRET = Keypair.random().secret(); // valid Stellar seed: S + 55 base32 chars
 
@@ -54,5 +60,37 @@ describe("logger redaction (pino)", () => {
     expect(entry.wallet.secretKey).toBe("[redacted]");
     expect(entry.wallet.privateKey).toBe("[redacted]");
     expect(entry.wallet.seed).toBe("[redacted]");
+  });
+});
+
+describe("resolveLogLevel", () => {
+  it("defaults to info when LOG_LEVEL is unset", () => {
+    expect(resolveLogLevel(undefined)).toEqual({ level: DEFAULT_LOG_LEVEL });
+  });
+
+  it("defaults to info when LOG_LEVEL is an empty string", () => {
+    expect(resolveLogLevel("")).toEqual({ level: DEFAULT_LOG_LEVEL });
+  });
+
+  it("accepts every valid pino level", () => {
+    for (const level of VALID_LOG_LEVELS) {
+      expect(resolveLogLevel(level)).toEqual({ level });
+    }
+  });
+
+  it("enables debug-level logging when LOG_LEVEL=debug", () => {
+    expect(resolveLogLevel("debug")).toEqual({ level: "debug" });
+  });
+
+  it("is case-insensitive and trims surrounding whitespace", () => {
+    expect(resolveLogLevel("  DEBUG  ")).toEqual({ level: "debug" });
+    expect(resolveLogLevel("Info")).toEqual({ level: "info" });
+  });
+
+  it("falls back to info and reports the rejected value for an invalid level", () => {
+    expect(resolveLogLevel("verbose")).toEqual({
+      level: DEFAULT_LOG_LEVEL,
+      invalidValue: "verbose",
+    });
   });
 });
