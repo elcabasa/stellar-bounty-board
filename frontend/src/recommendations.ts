@@ -171,36 +171,79 @@ export function calculateRecommendationScore(
   };
 }
 
-export function generateRecommendations(
+/**
+ * Count how many bounty labels overlap with labels from completed work.
+ */
+export function countLabelOverlap(bounty: Bounty, completedLabels: string[]): number {
+  if (completedLabels.length === 0) {
+    return 0;
+  }
+
+  const completedSet = new Set(completedLabels.map((label) => label.toLowerCase()));
+
+  return bounty.labels.filter((label) => completedSet.has(label.name.toLowerCase())).length;
+}
+
+function buildRecommendation(bounty: Bounty, overlap: number): BountyRecommendation {
+  const reasons: string[] = [];
+
+  if (overlap > 0) {
+    reasons.push(
+      overlap === 1
+        ? 'Matches 1 label from your completed work'
+        : `Matches ${overlap} labels from your completed work`
+    );
+  } else {
+    reasons.push('Top open bounty by reward');
+  }
+
+  return {
+    bounty,
+    score: overlap > 0 ? Math.min(overlap / 3, 1) : 0.1,
+    reasons,
+  };
+}
+
+/**
+ * Return the highest-value open bounties when the contributor has no history.
+ */
+export function getFallbackRecommendations(
   bounties: Bounty[],
-  profile: ContributorProfile,
-  limit = 5
+  limit = 3
 ): BountyRecommendation[] {
   return bounties
     .filter((bounty) => bounty.status === 'open')
-    .map((bounty) => {
-      const { score, reasons } = calculateRecommendationScore(bounty, profile);
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit)
+    .map((bounty) => buildRecommendation(bounty, 0));
+}
 
-      return {
-        bounty,
-        score,
-        reasons,
-      };
-    })
-    .filter((recommendation) => recommendation.score > 0.1)
+export function generateRecommendations(
+  bounties: Bounty[],
+  profile: ContributorProfile,
+  limit = 3
+): BountyRecommendation[] {
+  const openBounties = bounties.filter((bounty) => bounty.status === 'open');
+
+  if (profile.completedLabels.length === 0) {
+    return getFallbackRecommendations(openBounties, limit);
+  }
+
+  return openBounties
+    .map((bounty) => ({
+      bounty,
+      overlap: countLabelOverlap(bounty, profile.completedLabels),
+    }))
+    .filter((entry) => entry.overlap > 0)
     .sort((a, b) => {
-      const scoreDifference = b.score - a.score;
-
-      if (scoreDifference !== 0) {
-        return scoreDifference;
+      if (b.overlap !== a.overlap) {
+        return b.overlap - a.overlap;
       }
 
-      return (
-        scoreMatch(b.bounty, profile.completedLabels) -
-        scoreMatch(a.bounty, profile.completedLabels)
-      );
+      return b.bounty.amount - a.bounty.amount;
     })
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(({ bounty, overlap }) => buildRecommendation(bounty, overlap));
 }
 
 export function createDefaultProfile(): ContributorProfile {
