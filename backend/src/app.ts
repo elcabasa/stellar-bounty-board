@@ -54,6 +54,7 @@ import {
   createStellarSignatureAuthMiddleware,
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
+import { requireJsonContentType } from './middleware/contentType';
 import { readLimiter, mutationLimiter } from './utils';
 import { logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
@@ -519,6 +520,7 @@ app.get('/api/bounties/released/export.csv', (req: Request, res: Response) => {
 app.post(
   '/api/bounties',
   mutationLimiter,
+  requireJsonContentType,
   createBountyCreationSignatureMiddleware(),
   validateBody(createBountySchema),
   async (req: Request, res: Response) => {
@@ -538,6 +540,14 @@ app.post(
   }
 );
 
+app.post('/api/bounties/:id/reserve', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
+  const parsedBody = reserveBountySchema.safeParse(req.body);
+
+  if (!parsedBody.success) {
+    jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+    return;
+  }
+
 app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, validateBody(reserveBountySchema), async (req: Request, res: Response) => {
   try {
     const bounty = await reserveBounty(
@@ -551,6 +561,14 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, va
     sendError(res, req, error);
   }
 });
+
+app.post('/api/bounties/:id/submit', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
+  const parsedBody = submitBountySchema.safeParse(req.body);
+
+  if (!parsedBody.success) {
+    jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
+    return;
+  }
 
 app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, validateBody(submitBountySchema), async (req: Request, res: Response) => {
   try {
@@ -570,6 +588,7 @@ app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, val
 app.post(
   '/api/bounties/:id/release',
   mutationLimiter,
+  requireJsonContentType,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
   validateBody(maintainerActionSchema),
@@ -659,6 +678,7 @@ app.post(
 app.patch(
   '/api/bounties/:id/notes',
   mutationLimiter,
+  requireJsonContentType,
   createStellarSignatureAuthMiddleware(),
   validateBody(updateNotesSchema),
   async (req: Request, res: Response) => {
