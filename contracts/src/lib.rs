@@ -155,6 +155,17 @@ pub enum ContractError {
     DisputeWindowNotMet,
 }
 
+/// Maximum allowed bounty amount: 10 billion XLM expressed in stroops
+/// (1 XLM = 10_000_000 stroops, so 10_000_000_000 XLM × 10_000_000 = 10^17 stroops).
+///
+/// Rationale: Without an upper bound an attacker could create a bounty with
+/// i128::MAX.  Fee math performs  `amount * protocol_fee_bps / 10_000`, which
+/// overflows for values close to i128::MAX (≈ 1.7 × 10^38).  Capping at 10 B
+/// XLM in stroops (10^17) leaves more than 20 orders-of-magnitude of headroom
+/// below the i128 ceiling, making overflow arithmetically impossible while
+/// still allowing any realistic on-chain bounty value.
+const MAX_BOUNTY_AMOUNT: i128 = 10_000_000_000_0000000; // 10 B XLM in stroops
+
 fn panic_error(error: ContractError) -> ! {
     panic!("{:?}", error);
 }
@@ -206,7 +217,7 @@ impl StellarBountyBoardContract {
     ) -> u64 {
         maintainer.require_auth();
 
-        if amount <= 0 {
+        if amount <= 0 || amount > MAX_BOUNTY_AMOUNT {
             panic_error(ContractError::InvalidAmount);
         }
         if deadline <= env.ledger().timestamp() {
