@@ -47,6 +47,7 @@ import {
   createStellarSignatureAuthMiddleware,
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
+import { requireJsonContentType } from './middleware/contentType';
 import { readLimiter, mutationLimiter } from './utils';
 import { logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
@@ -520,6 +521,7 @@ app.get('/api/bounties/released/export.csv', (req: Request, res: Response) => {
 app.post(
   '/api/bounties',
   mutationLimiter,
+  requireJsonContentType,
   createBountyCreationSignatureMiddleware(),
   async (req: Request, res: Response) => {
     const parsed = createBountySchema.safeParse(req.body);
@@ -545,7 +547,7 @@ app.post(
   }
 );
 
-app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/reserve', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = reserveBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -566,7 +568,7 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, as
   }
 });
 
-app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/submit', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = submitBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -591,6 +593,7 @@ app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, asy
 app.post(
   '/api/bounties/:id/release',
   mutationLimiter,
+  requireJsonContentType,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
@@ -671,6 +674,7 @@ app.post(
 app.patch(
   '/api/bounties/:id/notes',
   mutationLimiter,
+  requireJsonContentType,
   createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
     const parsedBody = updateNotesSchema.safeParse(req.body);
