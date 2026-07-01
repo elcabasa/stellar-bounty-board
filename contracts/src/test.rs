@@ -864,4 +864,7 @@ fn test_extend_deadline_earlier() {
 }
 
 
+
+    // Dispute after deadline should fail
+    client.dispute_bounty(&bounty_id, &arbiter);
 }

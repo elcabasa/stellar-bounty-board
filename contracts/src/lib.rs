@@ -148,6 +148,7 @@ pub enum ContractError {
     MissingContributor,
     BountyAlreadyFinalized,
     BountyNotExpiredYet,
+    BountyExpired,
     DeadlineMustAdvance,
     CannotExtendFinalizedBounty,
     BountyNotFound,
@@ -483,6 +484,11 @@ impl StellarBountyBoardContract {
 
     pub fn dispute_bounty(env: Env, bounty_id: u64, arbiter: Address) {
         let mut bounty = read_bounty(&env, bounty_id);
+
+        if env.ledger().timestamp() > bounty.deadline {
+            panic_error(ContractError::BountyExpired);
+        }
+
         let contributor = bounty
             .contributor
             .clone()
