@@ -68,6 +68,7 @@ describe("getGlobalMetrics / getGlobalMetricsCached", () => {
       totalReleased: 0,
       uniqueMaintainers: 0,
       uniqueContributors: 0,
+      protocolFeesCollected: 0,
     };
 
     expect(sync).toEqual(expected);
@@ -79,7 +80,7 @@ describe("getGlobalMetrics / getGlobalMetricsCached", () => {
       makeRecord({ status: "open", amount: 50, maintainer: MAINTAINER }),
       makeRecord({ status: "reserved", amount: 75, maintainer: MAINTAINER, contributor: CONTRIBUTOR }),
       makeRecord({ status: "submitted", amount: 30, maintainer: MAINTAINER, contributor: CONTRIBUTOR }),
-      makeRecord({ status: "released", amount: 200, maintainer: MAINTAINER, contributor: CONTRIBUTOR }),
+      makeRecord({ status: "released", amount: 200, maintainer: MAINTAINER, contributor: CONTRIBUTOR, protocolFeeCollected: 10 }),
       makeRecord({ status: "refunded", amount: 40, maintainer: MAINTAINER }),
       makeRecord({ status: "expired", amount: 60, maintainer: MAINTAINER }),
     ];
@@ -99,6 +100,7 @@ describe("getGlobalMetrics / getGlobalMetricsCached", () => {
     expect(metrics.totalReleased).toBeCloseTo(200);
     expect(metrics.uniqueMaintainers).toBe(1);
     expect(metrics.uniqueContributors).toBe(1);
+    expect(metrics.protocolFeesCollected).toBeCloseTo(10);
   });
 
   it("counts multiple unique maintainers and contributors", async () => {
@@ -146,5 +148,69 @@ describe("getGlobalMetrics / getGlobalMetricsCached", () => {
 
     const second = await getGlobalMetricsCached(cache);
     expect(second).toEqual(first);
+  });
+});
+
+describe("protocolFeesCollected", () => {
+  it("is 0 when no bounties exist", async () => {
+    const { getGlobalMetrics } = await loadStore();
+    const metrics = getGlobalMetrics();
+    expect(metrics.protocolFeesCollected).toBe(0);
+  });
+
+  it("is 0 when released bounties have no protocolFeeCollected field", async () => {
+    const records: BountyRecord[] = [
+      makeRecord({ status: "released", amount: 100, contributor: CONTRIBUTOR }),
+    ];
+    fs.writeFileSync(storeFile, JSON.stringify(records), "utf8");
+
+    const { getGlobalMetrics } = await loadStore();
+    const metrics = getGlobalMetrics();
+    expect(metrics.protocolFeesCollected).toBe(0);
+  });
+
+  it("sums protocolFeeCollected across a single released bounty", async () => {
+    const records: BountyRecord[] = [
+      makeRecord({
+        status: "released",
+        amount: 500,
+        contributor: CONTRIBUTOR,
+        protocolFeeCollected: 25,
+      }),
+    ];
+    fs.writeFileSync(storeFile, JSON.stringify(records), "utf8");
+
+    const { getGlobalMetrics } = await loadStore();
+    const metrics = getGlobalMetrics();
+    expect(metrics.protocolFeesCollected).toBeCloseTo(25);
+  });
+
+  it("sums protocolFeeCollected across multiple released bounties", async () => {
+    const records: BountyRecord[] = [
+      makeRecord({ status: "released", amount: 1000, contributor: CONTRIBUTOR, protocolFeeCollected: 10 }),
+      makeRecord({ status: "released", amount: 2000, contributor: CONTRIBUTOR, protocolFeeCollected: 20 }),
+      makeRecord({ status: "released", amount: 500,  contributor: CONTRIBUTOR, protocolFeeCollected: 5 }),
+    ];
+    fs.writeFileSync(storeFile, JSON.stringify(records), "utf8");
+
+    const { getGlobalMetrics } = await loadStore();
+    const metrics = getGlobalMetrics();
+    // 10 + 20 + 5 = 35
+    expect(metrics.protocolFeesCollected).toBeCloseTo(35);
+  });
+
+  it("does not count fees from non-released bounties", async () => {
+    const records: BountyRecord[] = [
+      makeRecord({ status: "open",     amount: 100, protocolFeeCollected: 99 }),
+      makeRecord({ status: "reserved", amount: 100, protocolFeeCollected: 99 }),
+      makeRecord({ status: "refunded", amount: 100, protocolFeeCollected: 99 }),
+      makeRecord({ status: "released", amount: 100, contributor: CONTRIBUTOR, protocolFeeCollected: 7 }),
+    ];
+    fs.writeFileSync(storeFile, JSON.stringify(records), "utf8");
+
+    const { getGlobalMetrics } = await loadStore();
+    const metrics = getGlobalMetrics();
+    // Only the released one contributes
+    expect(metrics.protocolFeesCollected).toBeCloseTo(7);
   });
 });
