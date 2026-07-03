@@ -9,13 +9,15 @@
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
     "gen:openapi": "npm --prefix backend run gen:openapi",
+    "gen:bindings": "bash scripts/gen-bindings.sh",
     "build": "npm --prefix backend run build && npm --prefix frontend run build",
     "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
     "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
     "lint:fix": "npm --prefix backend run lint:fix && npm --prefix frontend run lint:fix",
     "test": "npm --prefix backend test",
     "test:watch": "npm --prefix backend run test:watch",
-    "test:coverage": "npm --prefix backend run test:coverage"
+    "test:coverage": "npm --prefix backend run test:coverage",
+    "check:bindings": "bash scripts/gen-bindings.sh && git diff --exit-code frontend/src/generated"
   },
   "license": "MIT",
   "dependencies": {

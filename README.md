@@ -212,6 +212,30 @@ The Soroban contract models the escrow lifecycle:
 
 The backend currently acts as the demo control plane, while the contract gives you a clear path to move the source of truth on-chain.
 
+### TypeScript Bindings
+
+The frontend consumes auto-generated TypeScript bindings from the Soroban contract ABI. The generated types live in `frontend/src/generated/` and are imported by `frontend/src/api.ts` to keep frontend and contract types in sync.
+
+#### Regenerating bindings after contract changes
+
+Whenever the contract ABI changes, regenerate the bindings before committing:
+
+```bash
+npm run gen:bindings
+```
+
+This script:
+
+1. Builds the contract WASM (`cargo build --release --target wasm32-unknown-unknown`).
+2. Runs `stellar contract bindings typescript` against the WASM.
+3. Writes the generated TypeScript package to `frontend/src/generated/`.
+
+The Stellar CLI is downloaded automatically if it is not already installed.
+
+#### Catching ABI drift in CI
+
+The `bindings-drift.yml` workflow regenerates bindings on every PR and push to `main` and fails if the committed files differ from the freshly generated output. If CI reports drift, run `npm run gen:bindings` locally and commit the updated files.
+
 ### Contract Error Codes
 
 The Soroban contract uses a named error enum (`Error`) for recoverable failures:

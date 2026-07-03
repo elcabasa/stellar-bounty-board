@@ -6,6 +6,12 @@ import type {
   MaintainerMetrics,
   OpenIssue,
 } from './types';
+import {
+  BountyStatus as ContractBountyStatus,
+  ContractError,
+  CONTRACT_ERROR_LABELS,
+  frontendStatusToContract,
+} from './generated';
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
 const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
@@ -366,4 +372,22 @@ export async function getGlobalMetrics(): Promise<GlobalMetrics> {
   });
 
   return body.data;
+}
+
+/**
+ * Map a backend bounty status string to the on-chain contract enum.
+ * Keeps the frontend aligned with the Soroban ABI: if the contract adds or
+ * reorders a variant, the generated enum will change and TypeScript will
+ * surface the drift here.
+ */
+export function toContractBountyStatus(status: Bounty['status']): ContractBountyStatus {
+  return frontendStatusToContract(status);
+}
+
+/**
+ * Human-readable label for a contract error code returned by the backend or
+ * indexer. Uses the generated ContractError enum so labels stay in sync.
+ */
+export function getContractErrorLabel(error: ContractError): string {
+  return CONTRACT_ERROR_LABELS[error] ?? 'UnknownContractError';
 }
