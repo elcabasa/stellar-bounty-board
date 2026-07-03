@@ -8,6 +8,10 @@ use soroban_sdk::{
     token::Client as TokenClient, Address, Env, String, Vec,
 };
 
+// ─── Contract Version ─────────────────────────────────────────────────────────
+/// Semver string pulled from Cargo.toml at compile time.
+pub const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BountyStatus {
@@ -36,6 +40,16 @@ pub struct Bounty {
     pub dispute_raised_at: u64,
 }
 
+/// Cumulative fee statistics updated on every payout release.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FeeStats {
+    /// Running total of all protocol fees collected (in token stroops).
+    pub total_collected: i128,
+    /// Number of bounties that have been released (fee-generating events).
+    pub bounty_count: u64,
+}
+
 #[contracttype]
 enum DataKey {
     NextBountyId,
@@ -43,6 +57,8 @@ enum DataKey {
     FeeRecipient,
     Arbiter,
     DisputeWindow,
+    /// Accumulated protocol fee statistics.
+    FeeStats,
 }
 
 #[contracttype]
@@ -90,6 +106,14 @@ pub struct BountyRefunded {
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BountyCanceled {
+    pub bounty_id: u64,
+    pub maintainer: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BountyDisputed {
     pub bounty_id: u64,
     pub contributor: Address,
@@ -124,12 +148,24 @@ pub enum ContractError {
     MissingContributor,
     BountyAlreadyFinalized,
     BountyNotExpiredYet,
+    BountyExpired,
     DeadlineMustAdvance,
     CannotExtendFinalizedBounty,
     BountyNotFound,
     NotArbiter,
     DisputeWindowNotMet,
 }
+
+/// Maximum allowed bounty amount: 10 billion XLM expressed in stroops
+/// (1 XLM = 10_000_000 stroops, so 10_000_000_000 XLM × 10_000_000 = 10^17 stroops).
+///
+/// Rationale: Without an upper bound an attacker could create a bounty with
+/// i128::MAX.  Fee math performs  `amount * protocol_fee_bps / 10_000`, which
+/// overflows for values close to i128::MAX (≈ 1.7 × 10^38).  Capping at 10 B
+/// XLM in stroops (10^17) leaves more than 20 orders-of-magnitude of headroom
+/// below the i128 ceiling, making overflow arithmetically impossible while
+/// still allowing any realistic on-chain bounty value.
+const MAX_BOUNTY_AMOUNT: i128 = 10_000_000_000_0000000; // 10 B XLM in stroops
 
 fn panic_error(error: ContractError) -> ! {
     panic!("{:?}", error);
@@ -140,6 +176,14 @@ pub struct StellarBountyBoardContract;
 
 #[contractimpl]
 impl StellarBountyBoardContract {
+    // ─── Version ─────────────────────────────────────────────────────────────
+    /// Returns the contract version as a semver string (e.g. "0.1.0").
+    pub fn get_version(_env: Env) -> String {
+        // We use _env because String::from_str needs it, but in future
+        // Soroban SDK versions this may be optional for static strings.
+        String::from_str(&_env, CONTRACT_VERSION)
+    }
+    
     pub fn initialize(env: Env, fee_recipient: Address, arbiter: Address, dispute_window: u64) {
         // Prevent re-initialization
         if env.storage().persistent().has(&DataKey::FeeRecipient) {
@@ -174,7 +218,7 @@ impl StellarBountyBoardContract {
     ) -> u64 {
         maintainer.require_auth();
 
-        if amount <= 0 {
+        if amount <= 0 || amount > MAX_BOUNTY_AMOUNT {
             panic_error(ContractError::InvalidAmount);
         }
         if deadline <= env.ledger().timestamp() {
@@ -293,11 +337,7 @@ impl StellarBountyBoardContract {
             panic_error(ContractError::BountyMustBeSubmitted);
         }
 
-        let contributor = bounty
-            .contributor
-            .clone()
-            .unwrap();
-
+        let contributor = bounty.contributor.clone().unwrap();
 
         let token_client = TokenClient::new(&env, &bounty.token);
         let contract_address = env.current_contract_address();
@@ -329,6 +369,9 @@ impl StellarBountyBoardContract {
             token_client.transfer(&contract_address, &fee_recipient, &fee_amount);
         }
         // ────────────────────────────────────────────────────────────────
+
+        // Atomically update FeeStats
+        accumulate_fee_stats(&env, fee_amount);
 
         bounty.status = BountyStatus::Released;
         write_bounty(&env, bounty_id, &bounty);
@@ -379,6 +422,34 @@ impl StellarBountyBoardContract {
         );
     }
 
+    pub fn cancel_bounty(env: Env, bounty_id: u64, maintainer: Address) {
+        maintainer.require_auth();
+        let mut bounty = read_bounty(&env, bounty_id);
+
+        if bounty.maintainer != maintainer {
+            panic_error(ContractError::MaintainerMismatch);
+        }
+        if bounty.status != BountyStatus::Open {
+            panic_error(ContractError::BountyNotOpen);
+        }
+
+        let token_client = TokenClient::new(&env, &bounty.token);
+        let contract_address = env.current_contract_address();
+        token_client.transfer(&contract_address, &maintainer, &bounty.amount);
+
+        bounty.status = BountyStatus::Refunded;
+        write_bounty(&env, bounty_id, &bounty);
+
+        env.events().publish(
+            (symbol_short!("Bounty"), symbol_short!("Cancel")),
+            BountyCanceled {
+                bounty_id,
+                maintainer,
+                amount: bounty.amount,
+            },
+        );
+    }
+
     pub fn extend_deadline(env: Env, bounty_id: u64, maintainer: Address, new_deadline: u64) {
         maintainer.require_auth();
         let mut bounty = read_bounty(&env, bounty_id);
@@ -413,6 +484,11 @@ impl StellarBountyBoardContract {
 
     pub fn dispute_bounty(env: Env, bounty_id: u64, arbiter: Address) {
         let mut bounty = read_bounty(&env, bounty_id);
+
+        if env.ledger().timestamp() > bounty.deadline {
+            panic_error(ContractError::BountyExpired);
+        }
+
         let contributor = bounty
             .contributor
             .clone()
@@ -501,6 +577,9 @@ impl StellarBountyBoardContract {
                 token_client.transfer(&contract_address, &fee_recipient, &fee_amount);
             }
 
+            // Atomically update FeeStats for the dispute-release path
+            accumulate_fee_stats(&env, fee_amount);
+
             bounty.status = BountyStatus::Released;
         } else {
             token_client.transfer(&contract_address, &bounty.maintainer, &bounty.amount);
@@ -532,31 +611,61 @@ impl StellarBountyBoardContract {
             .unwrap_or(0)
     }
 
+pub fn get_next_bounty_id(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::NextBountyId)
+            .unwrap_or(0)
+    }
+
+    /// Read-only view function to enumerate bounties on-chain.
     pub fn get_all_bounties(env: Env, start: u64, limit: u32) -> Vec<Bounty> {
-        let limit = if limit > 50 { 50 } else { limit };
-        let next_id: u64 = env
+        let enforced_limit = if limit > 50 { 50 } else { limit };
+        let mut result = Vec::new(&env);
+
+        let next_id = env
             .storage()
             .persistent()
             .get(&DataKey::NextBountyId)
             .unwrap_or(0);
 
-        let mut result = Vec::new(&env);
-        if start == 0 || start > next_id || limit == 0 {
+        // Return empty Vec immediately if start is out of bounds or invalid
+        if start == 0 || start > next_id || enforced_limit == 0 {
             return result;
         }
 
         let mut id = start;
         let mut count = 0u32;
-        while count < limit && id <= next_id {
-            let mut bounty = read_bounty(&env, id);
-            expire_if_needed(&env, &mut bounty);
-            result.push_back(bounty);
+
+        // Loop up to the limit or until we exceed the highest allocated bounty ID
+        while count < enforced_limit && id <= next_id {
+            // Check if the bounty actually exists in storage before reading to prevent a panic
+            if env.storage().persistent().has(&DataKey::Bounty(id)) {
+                let mut bounty = read_bounty(&env, id);
+                expire_if_needed(&env, &mut bounty);
+                result.push_back(bounty);
+            }
             id += 1;
             count += 1;
         }
 
         result
     }
+
+    /// Returns the cumulative fee statistics for the contract.
+    ///
+    /// Returns a [`FeeStats`] with `total_collected = 0` and `bounty_count = 0`
+    /// if no bounties have been released yet.
+    pub fn get_fee_stats(env: Env) -> FeeStats {
+        env.storage()
+            .persistent()
+            .get(&DataKey::FeeStats)
+            .unwrap_or(FeeStats {
+                total_collected: 0,
+                bounty_count: 0,
+            })
+    }
+} main
 }
 
 fn read_bounty(env: &Env, bounty_id: u64) -> Bounty {

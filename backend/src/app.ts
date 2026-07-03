@@ -2,40 +2,47 @@ import cors from 'cors';
 import express, { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import swaggerUi from 'swagger-ui-express';
-import pinoHttp from 'pino-http';
-import { buildCorsOptions } from './middleware/corsOptions';
+
 import { generateOpenApiDocument } from './docs/openapi';
 import { getMetrics, httpRequestDuration } from './metrics';
 
 import {
   createBounty,
   disputeBounty,
+  extendDeadline,
+  updateBountyNotes,
   listBountyAuditLogs,
   listAllAuditLogs,
   listBounties,
   listBountiesCached,
   invalidateBountyCache,
   refundBounty,
+  cancelBounty,
   releaseBounty,
   reserveBounty,
   submitBounty,
+  updateBountyNotes,
   getBountyEvents,
   getMaintainerMetrics,
   getGlobalMetrics,
   getGlobalMetricsCached,
   getLeaderboard,
+  aggregatedMetrics,
 } from './services/bountyStore';
+
+import { listOpenIssues } from './services/openIssues';
 
 import {
   bountyIdSchema,
   createBountySchema,
   disputeBountySchema,
+  extendDeadlineSchema,
   maintainerActionSchema,
   reserveBountySchema,
   submitBountySchema,
   updateNotesSchema,
-  zodErrorMessage,
 } from './validation/schemas';
+import { validateBody } from './middleware/validateBody';
 import { isValidStellarAddress } from './utils';
 
 import {
@@ -47,11 +54,13 @@ import {
   createStellarSignatureAuthMiddleware,
 } from './middleware/auth';
 import { idempotencyMiddleware } from './middleware/idempotency';
+import { requireJsonContentType } from './middleware/contentType';
 import { readLimiter, mutationLimiter } from './utils';
 import { logger } from './logger';
 import { createAdminApiKeyAuthMiddleware } from './middleware/adminAuth';
 import { handleGitHubPrEvent } from './webhooks/githubPrHandler';
 import { draining } from './shutdown';
+
 
 const INCOMING_REQUEST_ID = /^[a-zA-Z0-9-]{1,128}$/;
 
@@ -95,13 +104,7 @@ function requestContextMiddleware(req: Request, res: Response, next: NextFunctio
 
 export const app = express();
 
-app.use((_req: Request, res: Response, next: NextFunction) => {
-  if (draining) {
-    res.setHeader('Connection', 'close');
-    return res.status(503).json({ error: 'Service unavailable — server is shutting down' });
-  }
-  next();
-});
+
 
 app.use(cors(buildCorsOptions()));
 
@@ -130,6 +133,31 @@ app.use(
   })
 );
 app.use(requestContextMiddleware);
+
+const healthHandler = (_req: Request, res: Response) => {
+  res.json({
+    service: 'stellar-bounty-board-api',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+};
+
+app.get('/api/health', healthHandler);
+
+app.get('/api/health/deep', async (_req: Request, res: Response) => {
+  const result = await runDeepHealthCheck();
+  const statusCode = result.overall === 'up' ? 200 : 503;
+  res.status(statusCode).json(result);
+});
+
+app.get('/worker/health', (_req: Request, res: Response) => {
+  res.json({
+    service: 'stellar-bounty-board-worker',
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use(readLimiter);
 
 const swaggerDoc = generateOpenApiDocument();
@@ -267,36 +295,6 @@ app.get('/sitemap.xml', (_req: Request, res: Response) => {
   res.type('application/xml').send(xml);
 });
 
-const healthHandler = (_req: Request, res: Response) => {
-  res.json({
-    service: 'stellar-bounty-board-api',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-};
-
-app.get('/api/health', healthHandler);
-
-app.get('/api/health/deep', (_req: Request, res: Response) => {
-  const arbiterConfigured = Boolean(process.env.ARBITER_ADDRESS?.trim());
-  res.json({
-    service: 'stellar-bounty-board-api',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    components: {
-      arbiter: arbiterConfigured ? 'configured' : 'missing',
-    },
-  });
-});
-
-app.get('/worker/health', (_req: Request, res: Response) => {
-  res.json({
-    service: 'stellar-bounty-board-worker',
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-  });
-});
-
 app.get('/api/bounties/by-issue', (req: Request, res: Response) => {
   const repo = req.query.repo;
   const issueStr = req.query.issue;
@@ -320,7 +318,9 @@ app.get('/api/bounties/by-issue', (req: Request, res: Response) => {
   );
 
   if (!found) {
-    return res.status(404).json({ error: `Bounty not found for repository ${repo} and issue #${issueNumber}` });
+    return res.status(404).json({
+      error: `Bounty not found for repository ${repo} and issue #${issueNumber}`,
+    });
   }
 
   return res.json({ data: found });
@@ -520,16 +520,11 @@ app.get('/api/bounties/released/export.csv', (req: Request, res: Response) => {
 app.post(
   '/api/bounties',
   mutationLimiter,
+  requireJsonContentType,
   createBountyCreationSignatureMiddleware(),
+  validateBody(createBountySchema),
   async (req: Request, res: Response) => {
-    const parsed = createBountySchema.safeParse(req.body);
-
-    if (!parsed.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsed.error));
-      return;
-    }
-
-    const amountError = validateBountyAmount(parsed.data.amount);
+    const amountError = validateBountyAmount(req.body.amount);
 
     if (amountError) {
       jsonError(res, req, 400, amountError);
@@ -537,7 +532,7 @@ app.post(
     }
 
     try {
-      const bounty = await createBounty(parsed.data);
+      const bounty = await createBounty(req.body);
       res.status(201).json({ data: bounty });
     } catch (error) {
       sendError(res, req, error);
@@ -545,7 +540,7 @@ app.post(
   }
 );
 
-app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/reserve', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = reserveBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -553,11 +548,12 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, as
     return;
   }
 
+app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, validateBody(reserveBountySchema), async (req: Request, res: Response) => {
   try {
     const bounty = await reserveBounty(
       parseId(req.params.id),
-      parsedBody.data.contributor,
-      parsedBody.data.expectedVersion
+      req.body.contributor,
+      req.body.expectedVersion
     );
 
     res.json({ data: bounty });
@@ -566,7 +562,7 @@ app.post('/api/bounties/:id/reserve', mutationLimiter, idempotencyMiddleware, as
   }
 });
 
-app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, async (req: Request, res: Response) => {
+app.post('/api/bounties/:id/submit', mutationLimiter, requireJsonContentType, idempotencyMiddleware, async (req: Request, res: Response) => {
   const parsedBody = submitBountySchema.safeParse(req.body);
 
   if (!parsedBody.success) {
@@ -574,12 +570,13 @@ app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, asy
     return;
   }
 
+app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, validateBody(submitBountySchema), async (req: Request, res: Response) => {
   try {
     const bounty = await submitBounty(
       parseId(req.params.id),
-      parsedBody.data.contributor,
-      parsedBody.data.submissionUrl,
-      parsedBody.data.notes
+      req.body.contributor,
+      req.body.submissionUrl,
+      req.body.notes
     );
 
     res.json({ data: bounty });
@@ -591,21 +588,16 @@ app.post('/api/bounties/:id/submit', mutationLimiter, idempotencyMiddleware, asy
 app.post(
   '/api/bounties/:id/release',
   mutationLimiter,
+  requireJsonContentType,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
+  validateBody(maintainerActionSchema),
   async (req: Request, res: Response) => {
-    const parsedBody = maintainerActionSchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await releaseBounty(
         parseId(req.params.id),
-        parsedBody.data.maintainer,
-        parsedBody.data.transactionHash
+        req.body.maintainer,
+        req.body.transactionHash
       );
 
       res.json({ data: bounty });
@@ -620,6 +612,27 @@ app.post(
   mutationLimiter,
   idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
+  validateBody(maintainerActionSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const bounty = await refundBounty(
+        parseId(req.params.id),
+        req.body.maintainer,
+        req.body.transactionHash
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/cancel',
+  mutationLimiter,
+  idempotencyMiddleware,
+  createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
     const parsedBody = maintainerActionSchema.safeParse(req.body);
 
@@ -629,7 +642,7 @@ app.post(
     }
 
     try {
-      const bounty = await refundBounty(
+      const bounty = await cancelBounty(
         parseId(req.params.id),
         parsedBody.data.maintainer,
         parsedBody.data.transactionHash
@@ -646,19 +659,13 @@ app.post(
   '/api/bounties/:id/dispute',
   mutationLimiter,
   createStellarSignatureAuthMiddleware(),
+  validateBody(disputeBountySchema),
   async (req: Request, res: Response) => {
-    const parsedBody = disputeBountySchema.safeParse(req.body);
-
-    if (!parsedBody.success) {
-      jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
-      return;
-    }
-
     try {
       const bounty = await disputeBounty(
         parseId(req.params.id),
-        parsedBody.data.contributor,
-        parsedBody.data.reason
+        req.body.contributor,
+        req.body.reason
       );
 
       res.json({ data: bounty });
@@ -671,9 +678,31 @@ app.post(
 app.patch(
   '/api/bounties/:id/notes',
   mutationLimiter,
+  requireJsonContentType,
+  createStellarSignatureAuthMiddleware(),
+  validateBody(updateNotesSchema),
+  async (req: Request, res: Response) => {
+    try {
+      const bounty = await updateBountyNotes(
+        parseId(req.params.id),
+        req.body.maintainer,
+        req.body.notes
+      );
+
+      res.json({ data: bounty });
+    } catch (error) {
+      sendError(res, req, error);
+    }
+  }
+);
+
+app.post(
+  '/api/bounties/:id/extend-deadline',
+  mutationLimiter,
+  idempotencyMiddleware,
   createStellarSignatureAuthMiddleware(),
   async (req: Request, res: Response) => {
-    const parsedBody = updateNotesSchema.safeParse(req.body);
+    const parsedBody = extendDeadlineSchema.safeParse(req.body);
 
     if (!parsedBody.success) {
       jsonError(res, req, 400, zodErrorMessage(parsedBody.error));
@@ -681,10 +710,10 @@ app.patch(
     }
 
     try {
-      const bounty = await updateBountyNotes(
+      const bounty = await extendDeadline(
         parseId(req.params.id),
         parsedBody.data.maintainer,
-        parsedBody.data.notes
+        parsedBody.data.newDeadline
       );
 
       res.json({ data: bounty });
@@ -718,7 +747,9 @@ app.post(
 );
 
 app.get('/api/open-issues', async (_req: Request, res: Response) => {
+  try {
 
+  }
 });
 
 app.get('/api/bounties/:id/events', (req: Request, res: Response) => {
@@ -739,6 +770,18 @@ app.get('/api/bounties/:id', (req: Request, res: Response) => {
     if (!bounty) {
       jsonError(res, req, 404, 'Bounty not found.');
       return;
+    }
+
+    res.setHeader('Cache-Control', 'max-age=5');
+
+    if (bounty.version !== undefined) {
+      const etag = `"${bounty.version}"`;
+      res.setHeader('ETag', etag);
+
+      if (req.headers['if-none-match'] === etag) {
+        res.status(304).end();
+        return;
+      }
     }
 
     res.json({ data: bounty });
@@ -784,7 +827,7 @@ app.get('/api/global-metrics', (_req: Request, res: Response) => {
 
 app.get('/api/stats', async (_req: Request, res: Response) => {
   try {
-    const metrics = await getGlobalMetricsCached();
+    const metrics = await aggregatedMetrics.getCached();
     res.json({ data: metrics });
   } catch (error) {
     sendError(res, _req, error, 500);
