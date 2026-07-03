@@ -5,7 +5,7 @@ mod test;
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short,
-    token::Client as TokenClient, Address, Env, String,
+    token::Client as TokenClient, Address, Env, String, Vec,
 };
 
 #[contracttype]
@@ -530,6 +530,32 @@ impl StellarBountyBoardContract {
             .persistent()
             .get(&DataKey::NextBountyId)
             .unwrap_or(0)
+    }
+
+    pub fn get_all_bounties(env: Env, start: u64, limit: u32) -> Vec<Bounty> {
+        let limit = if limit > 50 { 50 } else { limit };
+        let next_id: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::NextBountyId)
+            .unwrap_or(0);
+
+        let mut result = Vec::new(&env);
+        if start == 0 || start > next_id || limit == 0 {
+            return result;
+        }
+
+        let mut id = start;
+        let mut count = 0u32;
+        while count < limit && id <= next_id {
+            let mut bounty = read_bounty(&env, id);
+            expire_if_needed(&env, &mut bounty);
+            result.push_back(bounty);
+            id += 1;
+            count += 1;
+        }
+
+        result
     }
 }
 
